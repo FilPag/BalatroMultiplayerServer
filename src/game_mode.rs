@@ -44,32 +44,6 @@ pub struct BlindChoice {
     pub boss: Option<String>,
 }
 
-impl BlindChoice {
-    pub fn empty() -> Self {
-        Self {
-            small: None,
-            big: None,
-            boss: None,
-        }
-    }
-
-    pub fn pvp_only() -> Self {
-        Self {
-            small: Some("bl_pvp".to_string()),
-            big: Some("bl_pvp".to_string()),
-            boss: Some("bl_pvp".to_string()),
-        }
-    }
-
-    pub fn boss_only(boss: &str) -> Self {
-        Self {
-            small: None,
-            big: None,
-            boss: Some(boss.to_string()),
-        }
-    }
-}
-
 pub struct GameModeData {
     pub default_options: LobbyOptions,
 }

@@ -2,7 +2,7 @@ use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::client::{ClientProfile};
-use crate::game_mode::GameMode;
+use crate::game_mode::{GameMode, LobbyOptions};
 
 /// Messages sent to the lobby coordinator
 #[derive(Debug)]
@@ -44,6 +44,11 @@ pub enum LobbyMessage {
         lobby_tx: mpsc::UnboundedSender<LobbyMessage>,
     },
 
+    UpdateLobbyOptions {
+        player_id: Uuid,
+        options: LobbyOptions,
+    },
+
     PlayerJoined {
         player_id: Uuid,
         client_response_tx: mpsc::UnboundedSender<String>,
@@ -51,9 +56,9 @@ pub enum LobbyMessage {
     },
     /// A player left the lobby
     LeaveLobby{ player_id: Uuid, coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage> },
-    /// Get lobby info
-    GetInfo {
+
+    SetReady {
         player_id: Uuid,
-        response_tx: mpsc::UnboundedSender<String>,
+        is_ready: bool,
     },
 }

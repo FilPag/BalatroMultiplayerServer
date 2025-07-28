@@ -1,6 +1,6 @@
-use crate::actions::Action;
+use crate::actions::{ClientToServer, ServerToClient};
 use crate::messages::{CoordinatorMessage, LobbyMessage};
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -69,32 +69,18 @@ pub async fn handle_client(
     coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage>,
 ) {
     // Create channels for this client
-    let (response_tx, mut response_rx) = mpsc::unbounded_channel::<String>();
     let (writer_tx, writer_rx) = mpsc::unbounded_channel::<String>();
 
     let mut client: Client = Client::new(Some(coordinator_tx.clone()));
-    client.coordinator_channel = Some(coordinator_tx.clone());
 
     info!("Client {} connected from {}", client.profile.id, addr);
 
     // Send initial handshake
-    let _ = writer_tx.send(
-        serde_json::json!({
-          "action": "connected",
-          "clientId": client.profile.id.to_string()
-        })
-        .to_string(),
-    );
+    let connected_response = ServerToClient::connected(client.profile.id);
+    let _ = writer_tx.send(connected_response.to_json());
 
     // Spawn task to handle writing to the client socket
     let write_task = tokio::spawn(handle_client_writer(socket_writer, writer_rx));
-
-    // Spawn task to forward responses to writer
-    let response_forward_task = tokio::spawn(async move {
-        while let Some(message) = response_rx.recv().await {
-            let _ = writer_tx.send(message);
-        }
-    });
 
     // Track client state
 
@@ -111,13 +97,13 @@ pub async fn handle_client(
             }
             Ok(_) => {
                 // Parse action
-                match serde_json::from_str::<Action>(&line) {
+                match serde_json::from_str::<ClientToServer>(&line) {
                     Ok(action) => {
                         handle_client_action(
                             client.profile.id,
                             action,
                             &mut client,
-                            &response_tx,
+                            &writer_tx,
                         )
                         .await;
                     }
@@ -138,7 +124,6 @@ pub async fn handle_client(
 
     // Cancel background tasks
     write_task.abort();
-    response_forward_task.abort();
 
     debug!("Client {} cleanup complete", client.profile.id);
 }
@@ -157,22 +142,24 @@ async fn handle_client_writer(mut writer: OwnedWriteHalf, mut rx: mpsc::Unbounde
 /// Handle individual client actions using message passing
 async fn handle_client_action(
     client_id: Uuid,
-    action: Action,
+    action: ClientToServer,
     client: &mut Client,
     response_tx: &mpsc::UnboundedSender<String>,
 ) {
     match action {
-        Action::KeepAlive {} => {
+        ClientToServer::KeepAlive {} => {
             // Simple keep-alive response
-            let _ = response_tx.send(serde_json::json!({ "action": "a" }).to_string());
+            let response = ServerToClient::KeepAliveResponse {};
+            let _ = response_tx.send(response.to_json());
         }
 
-        Action::Version { version } => {
+        ClientToServer::Version { version } => {
             debug!("Client {} version: {}", client_id, version);
-            let _ = response_tx.send(r#"{"type":"versionOk"}"#.to_string());
+            let response = ServerToClient::VersionOk {};
+            let _ = response_tx.send(response.to_json());
         }
 
-        Action::SetClientData {
+        ClientToServer::SetClientData {
             username: new_username,
             colour: new_colour,
             mod_hash: new_mod_hash,
@@ -187,7 +174,7 @@ async fn handle_client_action(
             );
         }
 
-        Action::CreateLobby { ruleset, game_mode } => {
+        ClientToServer::CreateLobby { ruleset, game_mode } => {
             let (tx, rx) = oneshot::channel::<LobbyMessage>();
             let _ = client.send_to_coordinator(CoordinatorMessage::CreateLobby {
                 client_id,
@@ -208,19 +195,14 @@ async fn handle_client_action(
                         client.current_lobby = Some(lobby_code);
                     }
                     _ => {
-                        let _ = response_tx.send(
-                            serde_json::json!({
-                                "action": "error",
-                                "message": "Failed to create lobby"
-                            })
-                            .to_string(),
-                        );
+                        let error_response = ServerToClient::error("Failed to create lobby");
+                        let _ = response_tx.send(error_response.to_json());
                     }
                 }
             }
         }
 
-        Action::JoinLobby { code } => {
+        ClientToServer::JoinLobby { code } => {
             let (tx, rx) = oneshot::channel::<LobbyMessage>();
             let _ = client.send_to_coordinator(CoordinatorMessage::JoinLobby {
                 client_id,
@@ -240,20 +222,15 @@ async fn handle_client_action(
                         client.current_lobby = Some(lobby_code);
                     }
                     _ => {
-                        let _ = response_tx.send(
-                            serde_json::json!({
-                                "action": "error",
-                                "message": "Failed to join lobby"
-                            })
-                            .to_string(),
-                        );
+                        let error_response = ServerToClient::error("Failed to join lobby");
+                        let _ = response_tx.send(error_response.to_json());
                     }
                     
                 }
             }
         }
 
-        Action::LeaveLobby {} => {
+        ClientToServer::LeaveLobby {} => {
             info!("Client {} leaving lobby", client_id);
             match client.lobby_channel.as_ref() {
                 Some(_) => {
@@ -277,22 +254,18 @@ async fn handle_client_action(
             client.lobby_channel = None;
         }
 
-        Action::LobbyInfo {} => {
-            let _ = client.send_to_lobby(LobbyMessage::GetInfo {
-                player_id: client_id,
-                response_tx: response_tx.clone(),
-            });
+        ClientToServer::UpdateLobbyOptions { options } => {
+            let _ = client.send_to_lobby(LobbyMessage::UpdateLobbyOptions { player_id: client_id, options });
         }
 
-        // Handle all other actions not explicitly matched above
-        _ => {
-            let _ = response_tx.send(
-            serde_json::json!({
-                "error": "Unhandled action",
-                "action": format!("{:?}", action)
-            })
-            .to_string(),
-            );
+        // Handle new game actions
+        ClientToServer::SetReady { is_ready } => {
+            let _ = client.send_to_lobby(LobbyMessage::SetReady { player_id: client_id, is_ready });
+        }
+
+        ClientToServer::UpdateGameState { .. } => {
+            // TODO: Implement game state updates
+            debug!("Client {} sent game state update", client_id);
         }
     }
 }

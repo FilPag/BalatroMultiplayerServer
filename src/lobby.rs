@@ -1,3 +1,4 @@
+use crate::actions::ServerToClient;
 use crate::client::{ClientProfile};
 use crate::game_mode::{GameMode, LobbyOptions};
 use crate::messages::{CoordinatorMessage, LobbyMessage};
@@ -72,115 +73,116 @@ pub async fn lobby_task(
         lobby_code, ruleset, game_mode
     );
 
+    // Helper function to send responses safely
+    let send_response = |sender: &mpsc::UnboundedSender<String>, response: ServerToClient| {
+        let _ = sender.send(response.to_json());
+    };
+
+    // Helper function to broadcast to all except one player
+    let broadcast_response_except_one = |players: &HashMap<Uuid, mpsc::UnboundedSender<String>>, except: Uuid, response: ServerToClient| {
+        let message = response.to_json();
+        for (&player_id, sender) in players.iter() {
+            if player_id != except {
+                let _ = sender.send(message.clone());
+            }
+        }
+    };
+
+    // Helper function to broadcast to all players
+    let broadcast_response = |players: &HashMap<Uuid, mpsc::UnboundedSender<String>>, response: ServerToClient| {
+        let message = response.to_json();
+        for sender in players.values() {
+            let _ = sender.send(message.clone());
+        }
+    };
+
     while let Some(msg) = rx.recv().await {
         match msg {
             LobbyMessage::PlayerJoined {
-                player_id,
-                client_response_tx,
-                client_profile,
-            } => {
-                player_senders.insert(player_id, client_response_tx.clone());
+                                player_id,
+                                client_response_tx,
+                                client_profile,
+                            } => {
+                                player_senders.insert(player_id, client_response_tx.clone());
 
-                let lobby_entry = ClientLobbyEntry {
-                    profile: client_profile.clone(),
-                    lobby_state: ClientLobbyState {
-                        current_lobby: Some(lobby_code.clone()),
-                        is_ready: false,
-                        first_ready: false,
-                        is_cached: false,
-                        is_host: lobby.players.is_empty(), // First player is host
-                    },
-                    game_state: None, // No game state until game starts
-                };
+                                let lobby_entry = ClientLobbyEntry {
+                                    profile: client_profile.clone(),
+                                    lobby_state: ClientLobbyState {
+                                        current_lobby: Some(lobby_code.clone()),
+                                        is_ready: true,
+                                        first_ready: false,
+                                        is_cached: false,
+                                        is_host: lobby.players.is_empty(), // First player is host
+                                    },
+                                    game_state: None, // No game state until game starts
+                                };
 
-                lobby.players.insert(player_id, lobby_entry.clone());
+                                lobby.players.insert(player_id, lobby_entry.clone());
 
+                                // Send joined lobby response
+                                let joined_response = ServerToClient::joined_lobby(
+                                    player_id,
+                                    serde_json::to_value(&lobby).unwrap_or_default()
+                                );
+                                send_response(&client_response_tx, joined_response);
 
-                let _ = client_response_tx.send(
-                    serde_json::json!({
-                        "action": "joinedLobby",
-                        "player_id": player_id,
-                        "lobby_data": lobby
-                    })
-                    .to_string(),
-                );
+                                // Broadcast player joined to others
+                                let player_joined_response = ServerToClient::player_joined_lobby(lobby_entry.clone());
+                                broadcast_response_except_one(&player_senders, player_id, player_joined_response);
 
-                let player_joined_message = serde_json::json!({
-                    "action": "playerJoinedLobby",
-                    "player": lobby_entry.clone(),
-                });
-
-                broadcast_to_all_except_one(
-                    &player_senders,
-                    player_id,
-                    &player_joined_message.to_string(),
-                );
-
-                debug!("Player {} joined lobby {}", player_id, lobby_code);
-            }
-
+                                debug!("Player {} joined lobby {}", player_id, lobby_code);
+                            }
             LobbyMessage::LeaveLobby{ player_id, coordinator_tx } => {
-                debug!("Player {} leaving lobby {}", player_id, lobby_code);
-                player_senders.remove(&player_id);
-                let leaving_player = lobby.players.remove(&player_id).unwrap();
+                                debug!("Player {} leaving lobby {}", player_id, lobby_code);
+                                player_senders.remove(&player_id);
+                                let leaving_player = lobby.players.remove(&player_id).unwrap();
 
-                if lobby.players.is_empty() {
-                    let _ = coordinator_tx.send(CoordinatorMessage::LobbyShutdown {
-                        lobby_code: lobby.code.clone(),
+                                if lobby.players.is_empty() {
+                                    let _ = coordinator_tx.send(CoordinatorMessage::LobbyShutdown {
+                                        lobby_code: lobby.code.clone(),
+                                    });
+                                    break;
+                                }
+                                if leaving_player.lobby_state.is_host {
+                                    if let Some((&new_host_player_id, new_host_entry)) = lobby.players.iter_mut().next() {
+                                        new_host_entry.lobby_state.is_host = true;
+                                        new_host_entry.lobby_state.is_ready = true;
+                                        host_id = Some(new_host_player_id);
+                                    }
+                                }
+
+                                // Broadcast to remaining players
+                                let player_left_response = ServerToClient::player_left_lobby(player_id, host_id);
+                                broadcast_response(&player_senders, player_left_response);
+
+                                debug!("Player {} left lobby {}", player_id, lobby.code);
+                            }
+            LobbyMessage::LobbyJoinData {..} => todo!(),
+                                //should not do anything here, handled by client
+
+            LobbyMessage::UpdateLobbyOptions { player_id, options } => {
+                        // Update the lobby options
+                        lobby.lobby_options = options;
+                        for player in lobby.players.values_mut() {
+                            if player.lobby_state.is_host == false {
+                                player.lobby_state.is_ready = false;
+                            }
+                        }
+                        broadcast_response_except_one(&player_senders, player_id, ServerToClient::UpdateLobbyOptions {
+                            options: lobby.lobby_options.clone(),
+                        });
+                    },
+
+            LobbyMessage::SetReady { player_id, is_ready } => {
+                if let Some(player) = lobby.players.get_mut(&player_id) {
+                    player.lobby_state.is_ready = is_ready;
+                    broadcast_response_except_one(&player_senders, player_id, ServerToClient::PlayerReady{
+                        player_id,
+                        is_ready,
                     });
-                    break;
                 }
-                if leaving_player.lobby_state.is_host {
-                    if let Some((&new_host_player_id, new_host_entry)) = lobby.players.iter_mut().next() {
-                        new_host_entry.lobby_state.is_host = true;
-                        host_id = Some(new_host_player_id);
-                    }
-                }
-
-                // Broadcast to remaining players
-                let message = serde_json::json!({
-                    "action": "playerLeftLobby",
-                    "player_id": player_id,
-                    "host_id": host_id
-                });
-
-                broadcast_to_all(&player_senders, &message.to_string());
-
-                debug!("Player {} left lobby {}", player_id, lobby.code);
-            }
-
-            LobbyMessage::GetInfo {
-                player_id: _,
-                response_tx,
-            } => {
-                let _ = response_tx.send(format!(
-                    r#"{{"type":"lobbyInfo","code":"{}","players":{},"ruleset":"{}","gameMode":"{}"}}"#,
-                    lobby_code, lobby.players.len(), ruleset, game_mode
-                ));
-            }
-            LobbyMessage::LobbyJoinData {..} => {
-                //should not do anything here, handled by client
             }
         }
     }
     debug!("Lobby {} task ended", lobby_code);
-}
-
-fn broadcast_to_all_except_one(
-    players: &HashMap<Uuid, mpsc::UnboundedSender<String>>,
-    except: Uuid,
-    message: &str,
-) {
-    for (&player_id, sender) in players.iter() {
-        if player_id != except {
-            let _ = sender.send(message.to_string());
-        }
-    }
-}
-
-/// Broadcast a message to all players in the lobby
-fn broadcast_to_all(players: &HashMap<Uuid, mpsc::UnboundedSender<String>>, message: &str) {
-    for sender in players.values() {
-        let _ = sender.send(message.to_string());
-    }
 }
