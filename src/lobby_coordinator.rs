@@ -2,14 +2,13 @@ use crate::lobby::lobby_task;
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use uuid::Uuid;
+use tracing::{debug, info};
 
 /// Simple lobby coordinator that routes messages to individual lobby tasks
 pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessage>) {
     let mut lobby_senders: HashMap<String, mpsc::UnboundedSender<LobbyMessage>> = HashMap::new();
-    let mut client_lobbies: HashMap<Uuid, String> = HashMap::new(); // Track which lobby each client is in
 
-    println!("Lobby coordinator started");
+    info!("Lobby coordinator started");
 
     while let Some(msg) = rx.recv().await {
         match msg {
@@ -17,8 +16,9 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                 client_id,
                 ruleset,
                 game_mode,
-                response_tx,
-                mut client_data,
+                client_profile,
+                request_tx,
+                client_response_tx,
             } => {
                 // Generate a simple lobby code
                 let lobby_code = generate_lobby_code();
@@ -26,36 +26,43 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                 // Create the lobby task
                 let (lobby_tx, lobby_rx) = mpsc::unbounded_channel();
                 lobby_senders.insert(lobby_code.clone(), lobby_tx.clone());
-                client_lobbies.insert(client_id, lobby_code.clone());
-
                 // Spawn the lobby task
                 tokio::spawn(lobby_task(lobby_code.clone(), lobby_rx, ruleset, game_mode));
 
-                client_data.lobby_state.is_host = true; // Mark this client as the host
                 let _ = lobby_tx.send(LobbyMessage::PlayerJoined {
                     player_id: client_id,
-                    response_tx: response_tx.clone(),
-                    client_data,
+                    client_profile: client_profile.clone(),
+                    client_response_tx: client_response_tx.clone(),
                 });
 
-                println!("Created lobby: {}", lobby_code);
+                // Give client communication channel to lobby
+                let _ = request_tx.send(LobbyMessage::LobbyJoinData {
+                    lobby_code: lobby_code.clone(),
+                    lobby_tx: lobby_tx.clone(),
+                });
             }
 
             CoordinatorMessage::JoinLobby {
                 client_id,
                 lobby_code,
-                response_tx,
-                client_data,
+                request_tx,
+                client_response_tx,
+                client_profile,
             } => {
                 if let Some(lobby_tx) = lobby_senders.get(&lobby_code) {
+                    // Give client communication channel to lobby
+                    let _ = request_tx.send(LobbyMessage::LobbyJoinData {
+                        lobby_code: lobby_code.clone(),
+                        lobby_tx: lobby_tx.clone(),
+                    });
                     // Try to forward to lobby task
                     if let Err(_) = lobby_tx.send(LobbyMessage::PlayerJoined {
                         player_id: client_id,
-                        response_tx: response_tx.clone(),
-                        client_data,
+                        client_profile: client_profile.clone(),
+                        client_response_tx: client_response_tx.clone(),
                     }) {
                         // Failed to send to lobby, send error response
-                        let _ = response_tx.send(
+                        let _ = client_response_tx.send(
                             serde_json::json!({
                                 "action": "error",
                                 "message": "Failed to join lobby"
@@ -63,12 +70,10 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                             .to_string(),
                         );
                     } else {
-                        // Successfully sent to lobby, add client to tracking
-                        client_lobbies.insert(client_id, lobby_code.clone());
                     }
                 } else {
                     // Lobby doesn't exist
-                    let _ = response_tx.send(
+                    let _ = client_response_tx.send(
                         serde_json::json!({
                             "action": "error",
                             "message": "Lobby not found"
@@ -78,32 +83,13 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                 }
             }
 
-            CoordinatorMessage::RouteToLobby {
-                lobby_code,
-                message,
-            } => if let Some(lobby_tx) = lobby_senders.get(&lobby_code) {},
-
-            CoordinatorMessage::LeaveLobby { client_id } => {
-                println!("Client {} requested to leave lobby", client_id);
-                if let Some(lobby_code) = client_lobbies.remove(&client_id) {
-                    if let Some(lobby_tx) = lobby_senders.get(&lobby_code) {
-                        let _ = lobby_tx.send(LobbyMessage::PlayerLeft {
-                            player_id: client_id,
-                        });
-                    }
-                }
+            CoordinatorMessage::LobbyShutdown{ lobby_code } => {
+                lobby_senders.remove(&lobby_code);
             }
 
             CoordinatorMessage::ClientDisconnected { client_id } => {
                 // Remove client from any lobby they were in
-                println!("COORDINATOR ----- Client {} disconnected", client_id);
-                if let Some(lobby_code) = client_lobbies.remove(&client_id) {
-                    if let Some(lobby_tx) = lobby_senders.get(&lobby_code) {
-                        let _ = lobby_tx.send(LobbyMessage::PlayerLeft {
-                            player_id: client_id,
-                        });
-                    }
-                }
+                debug!("Client {} disconnected", client_id);
             }
         }
     }

@@ -1,18 +1,53 @@
-use crate::client::ClientData;
+use crate::client::{ClientProfile};
 use crate::game_mode::{GameMode, LobbyOptions};
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 /// Simple lobby coordinator that routes messages to individual lobby tasks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientLobbyState {
+    pub current_lobby: Option<String>,
+    pub is_ready: bool,
+    pub first_ready: bool,
+    pub is_cached: bool,
+    pub is_host: bool,
+}
 
-#[derive(Serialize, Debug)]
+// Game state (changes frequently during gameplay)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientGameState {
+    pub ante: u32,
+    pub furthest_blind: u32,
+    pub hands_left: u32,
+    pub hands_max: u32,
+    pub discards_left: u32,
+    pub discards_max: u32,
+    pub lives: u32,
+    pub lives_blocker: bool,
+    pub location: String,
+    pub skips: u32,
+    pub score: u64, // Simplified from InsaneInt
+    pub highest_score: u64,
+    pub spent_in_shop: Vec<u32>,
+}
+
+// Complete client data container
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientLobbyEntry{
+    pub profile: ClientProfile,
+    pub lobby_state: ClientLobbyState,
+    pub game_state: Option<ClientGameState>, // None when not in game
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Lobby {
     code: String,
     lobby_options: LobbyOptions,
-    players: HashMap<Uuid, ClientData>,
+    players: HashMap<Uuid, ClientLobbyEntry>,
 }
 
 /// Individual lobby task - handles 2-4 players
@@ -27,11 +62,12 @@ pub async fn lobby_task(
         lobby_options: game_mode.get_default_options(),
         players: HashMap::new(),
     };
+    let mut host_id = lobby.players.keys().next().cloned();
 
     // Keep senders separate for communication
     let mut player_senders: HashMap<Uuid, mpsc::UnboundedSender<String>> = HashMap::new();
 
-    println!(
+    info!(
         "Lobby {} started (ruleset: {}, mode: {})",
         lobby_code, ruleset, game_mode
     );
@@ -40,13 +76,27 @@ pub async fn lobby_task(
         match msg {
             LobbyMessage::PlayerJoined {
                 player_id,
-                response_tx,
-                client_data,
+                client_response_tx,
+                client_profile,
             } => {
-                player_senders.insert(player_id, response_tx.clone());
-                lobby.players.insert(player_id, client_data.clone());
+                player_senders.insert(player_id, client_response_tx.clone());
 
-                let _ = response_tx.send(
+                let lobby_entry = ClientLobbyEntry {
+                    profile: client_profile.clone(),
+                    lobby_state: ClientLobbyState {
+                        current_lobby: Some(lobby_code.clone()),
+                        is_ready: false,
+                        first_ready: false,
+                        is_cached: false,
+                        is_host: lobby.players.is_empty(), // First player is host
+                    },
+                    game_state: None, // No game state until game starts
+                };
+
+                lobby.players.insert(player_id, lobby_entry.clone());
+
+
+                let _ = client_response_tx.send(
                     serde_json::json!({
                         "action": "joinedLobby",
                         "player_id": player_id,
@@ -57,7 +107,7 @@ pub async fn lobby_task(
 
                 let player_joined_message = serde_json::json!({
                     "action": "playerJoinedLobby",
-                    "player": client_data,
+                    "player": lobby_entry.clone(),
                 });
 
                 broadcast_to_all_except_one(
@@ -66,29 +116,37 @@ pub async fn lobby_task(
                     &player_joined_message.to_string(),
                 );
 
-                println!("Player {} joined lobby {}", player_id, lobby_code);
+                debug!("Player {} joined lobby {}", player_id, lobby_code);
             }
 
-            //TODO migrate the host
-            LobbyMessage::PlayerLeft { player_id } => {
-                lobby.players.get(&player_id);
-                lobby.players.remove(&player_id);
+            LobbyMessage::LeaveLobby{ player_id, coordinator_tx } => {
+                debug!("Player {} leaving lobby {}", player_id, lobby_code);
                 player_senders.remove(&player_id);
+                let leaving_player = lobby.players.remove(&player_id).unwrap();
+
+                if lobby.players.is_empty() {
+                    let _ = coordinator_tx.send(CoordinatorMessage::LobbyShutdown {
+                        lobby_code: lobby.code.clone(),
+                    });
+                    break;
+                }
+                if leaving_player.lobby_state.is_host {
+                    if let Some((&new_host_player_id, new_host_entry)) = lobby.players.iter_mut().next() {
+                        new_host_entry.lobby_state.is_host = true;
+                        host_id = Some(new_host_player_id);
+                    }
+                }
 
                 // Broadcast to remaining players
                 let message = serde_json::json!({
                     "action": "playerLeftLobby",
                     "player_id": player_id,
+                    "host_id": host_id
                 });
 
                 broadcast_to_all(&player_senders, &message.to_string());
 
-                println!("Player {} left lobby {}", player_id, lobby_code);
-                // If no players left, exit the task
-                if lobby.players.is_empty() {
-                    println!("Lobby {} is empty, shutting down", lobby_code);
-                    break;
-                }
+                debug!("Player {} left lobby {}", player_id, lobby.code);
             }
 
             LobbyMessage::GetInfo {
@@ -100,10 +158,12 @@ pub async fn lobby_task(
                     lobby_code, lobby.players.len(), ruleset, game_mode
                 ));
             }
+            LobbyMessage::LobbyJoinData {..} => {
+                //should not do anything here, handled by client
+            }
         }
     }
-
-    println!("Lobby {} task ended", lobby_code);
+    debug!("Lobby {} task ended", lobby_code);
 }
 
 fn broadcast_to_all_except_one(

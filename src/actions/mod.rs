@@ -25,6 +25,7 @@ pub enum Action {
     },
     #[serde(rename = "joinLobby")]
     JoinLobby { code: String },
+
     #[serde(rename = "leaveLobby")]
     LeaveLobby {},
     #[serde(rename = "lobbyInfo")]

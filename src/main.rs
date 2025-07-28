@@ -1,4 +1,5 @@
 use socket2::{SockRef, TcpKeepalive};
+use tracing::info;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -18,7 +19,11 @@ use crate::messages::CoordinatorMessage;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind("0.0.0.0:8788").await?;
-    println!("Server listening on port 8788");
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+    info!("Server listening on port 8788");
+
 
     // Create the lobby coordinator
     let (coordinator_tx, coordinator_rx) = mpsc::unbounded_channel::<CoordinatorMessage>();
