@@ -109,10 +109,10 @@ pub async fn lobby_task(
                                     profile: client_profile.clone(),
                                     lobby_state: ClientLobbyState {
                                         current_lobby: Some(lobby_code.clone()),
-                                        is_ready: true,
+                                        is_ready: lobby.players.is_empty(),
                                         first_ready: false,
                                         is_cached: false,
-                                        is_host: lobby.players.is_empty(), // First player is host
+                                        is_host: lobby.players.is_empty(),
                                     },
                                     game_state: None, // No game state until game starts
                                 };

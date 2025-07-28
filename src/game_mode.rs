@@ -16,7 +16,7 @@ pub enum GameMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LobbyOptions {
     pub back: String,
-    pub challenge: i32,
+    pub challenge: String,
     pub custom_seed: String,
     pub death_on_round_loss: bool,
     pub different_decks: bool,
@@ -30,7 +30,6 @@ pub struct LobbyOptions {
     pub pvp_start_round: i32,
     pub ruleset: String,
     pub showdown_starting_antes: i32,
-    pub sleeve: String,
     pub stake: i32,
     pub starting_lives: i32,
     pub timer_base_seconds: i32,
@@ -68,7 +67,7 @@ impl GameMode {
 static ATTRITION_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     default_options: LobbyOptions {
         back: "Red Deck".to_string(),
-        challenge: 0,
+        challenge: "".to_string(),
         custom_seed: "random".to_string(),
         death_on_round_loss: false,
         different_decks: false,
@@ -82,7 +81,6 @@ static ATTRITION_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
         pvp_start_round: 2,
         ruleset: "ruleset_mp_standard".to_string(),
         showdown_starting_antes: 3,
-        sleeve: "sleeve_casl_none".to_string(),
         stake: 1,
         starting_lives: 4,
         timer_base_seconds: 150,
@@ -94,7 +92,7 @@ static ATTRITION_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 static SHOWDOWN_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     default_options: LobbyOptions {
         back: "Red Deck".to_string(),
-        challenge: 0,
+        challenge: "".to_string(),
         custom_seed: "random".to_string(),
         death_on_round_loss: false,
         different_decks: false,
@@ -108,7 +106,6 @@ static SHOWDOWN_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
         pvp_start_round: 2,
         ruleset: "ruleset_mp_standard".to_string(),
         showdown_starting_antes: 3,
-        sleeve: "sleeve_casl_none".to_string(),
         stake: 1,
         starting_lives: 4,
         timer_base_seconds: 150,
@@ -120,7 +117,7 @@ static SHOWDOWN_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 static SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     default_options: LobbyOptions {
         back: "Red Deck".to_string(),
-        challenge: 0,
+        challenge: "".to_string(),
         custom_seed: "random".to_string(),
         death_on_round_loss: false,
         different_decks: false,
@@ -134,7 +131,6 @@ static SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
         pvp_start_round: 20,
         ruleset: "ruleset_mp_standard".to_string(),
         showdown_starting_antes: 3,
-        sleeve: "sleeve_casl_none".to_string(),
         stake: 1,
         starting_lives: 4,
         timer_base_seconds: 150,
@@ -146,7 +142,7 @@ static SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 static COOP_SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     default_options: LobbyOptions {
         back: "Red Deck".to_string(),
-        challenge: 0,
+        challenge: "".to_string(),
         custom_seed: "random".to_string(),
         death_on_round_loss: true,
         different_decks: true,
@@ -160,7 +156,6 @@ static COOP_SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeDat
         normal_bosses: true,
         pvp_start_round: 2,
         showdown_starting_antes: 3,
-        sleeve: "sleeve_casl_none".to_string(),
         stake: 1,
         starting_lives: 2,
         timer_base_seconds: 150,
