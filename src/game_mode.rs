@@ -31,7 +31,7 @@ pub struct LobbyOptions {
     pub ruleset: String,
     pub showdown_starting_antes: i32,
     pub stake: i32,
-    pub starting_lives: i32,
+    pub starting_lives: u8,
     pub timer_base_seconds: i32,
     pub timer_increment_seconds: i32,
 }
@@ -60,15 +60,14 @@ impl GameMode {
     pub fn get_default_options(&self) -> LobbyOptions {
         self.get_data().default_options.clone()
     }
-
 }
 
 // Attrition game mode
 static ATTRITION_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     default_options: LobbyOptions {
-        back: "Red Deck".to_string(),
-        challenge: "".to_string(),
-        custom_seed: "random".to_string(),
+        back: String::from("Red Deck"),
+        challenge: String::from(""),
+        custom_seed: String::from("random"),
         death_on_round_loss: false,
         different_decks: false,
         different_seeds: false,
@@ -79,7 +78,7 @@ static ATTRITION_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
         no_gold_on_round_loss: false,
         normal_bosses: false,
         pvp_start_round: 2,
-        ruleset: "ruleset_mp_standard".to_string(),
+        ruleset: String::from("ruleset_mp_standard"),
         showdown_starting_antes: 3,
         stake: 1,
         starting_lives: 4,
@@ -91,9 +90,9 @@ static ATTRITION_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 // Showdown game mode
 static SHOWDOWN_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     default_options: LobbyOptions {
-        back: "Red Deck".to_string(),
-        challenge: "".to_string(),
-        custom_seed: "random".to_string(),
+        back: String::from("Red Deck"),
+        challenge: String::from(""),
+        custom_seed: String::from("random"),
         death_on_round_loss: false,
         different_decks: false,
         different_seeds: false,
@@ -104,7 +103,7 @@ static SHOWDOWN_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
         no_gold_on_round_loss: false,
         normal_bosses: false,
         pvp_start_round: 2,
-        ruleset: "ruleset_mp_standard".to_string(),
+        ruleset: String::from("ruleset_mp_standard"),
         showdown_starting_antes: 3,
         stake: 1,
         starting_lives: 4,
@@ -116,9 +115,9 @@ static SHOWDOWN_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 // Survival game mode
 static SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     default_options: LobbyOptions {
-        back: "Red Deck".to_string(),
-        challenge: "".to_string(),
-        custom_seed: "random".to_string(),
+        back: String::from("Red Deck"),
+        challenge: String::from(""),
+        custom_seed: String::from("random"),
         death_on_round_loss: false,
         different_decks: false,
         different_seeds: false,
@@ -129,7 +128,7 @@ static SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
         no_gold_on_round_loss: false,
         normal_bosses: false,
         pvp_start_round: 20,
-        ruleset: "ruleset_mp_standard".to_string(),
+        ruleset: String::from("ruleset_mp_standard"),
         showdown_starting_antes: 3,
         stake: 1,
         starting_lives: 4,
@@ -141,15 +140,15 @@ static SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 // CoopSurvival game mode
 static COOP_SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     default_options: LobbyOptions {
-        back: "Red Deck".to_string(),
-        challenge: "".to_string(),
-        custom_seed: "random".to_string(),
+        back: String::from("Red Deck"),
+        challenge: String::from(""),
+        custom_seed: String::from("random"),
         death_on_round_loss: true,
         different_decks: true,
         different_seeds: true,
         disable_live_and_timer_hud: false,
         gamemode: GameMode::CoopSurvival,
-        ruleset: "ruleset_mp_coop".to_string(),
+        ruleset: String::from("ruleset_mp_coop"),
         gold_on_life_loss: false,
         multiplayer_jokers: false,
         no_gold_on_round_loss: true,

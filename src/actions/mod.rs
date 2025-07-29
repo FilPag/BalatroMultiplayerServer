@@ -1,5 +1,6 @@
 use crate::game_mode::{GameMode, LobbyOptions};
-use crate::lobby::ClientLobbyEntry;
+use crate::insane_int::InsaneInt;
+use crate::lobby::{ClientGameState, ClientLobbyEntry};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -30,27 +31,29 @@ pub enum ClientToServer {
     JoinLobby { code: String },
     #[serde(rename = "leaveLobby")]
     LeaveLobby {},
-    
+
     #[serde(rename = "updateLobbyOptions")]
-    UpdateLobbyOptions{
-        options: LobbyOptions,
-    },
-    
+    UpdateLobbyOptions { options: LobbyOptions },
+
     // Game actions (for future expansion)
     #[serde(rename = "setReady")]
     SetReady { is_ready: bool },
-    #[serde(rename = "updateGameState")]
-    UpdateGameState {
-        ante: Option<u32>,
-        furthest_blind: Option<u32>,
-        hands_left: Option<u32>,
-        hands_max: Option<u32>,
-        discards_left: Option<u32>,
-        discards_max: Option<u32>,
-        lives: Option<u32>,
-        location: Option<String>,
-        score: Option<u64>,
+
+
+    #[serde(rename = "setLocation")]
+    SetLocation { location: String },
+
+    #[serde(rename = "startGame")]
+    StartGame {
+        seed: String,
+        stake: i32,
     },
+
+    #[serde(rename = "stopGame")]
+    StopGame {},
+
+    #[serde(rename = "updateHandsAndDiscards")]
+    UpdateHandsAndDiscards { hands_max: u8, discards_max: u8 },
 }
 
 // Server to Client Actions
@@ -68,7 +71,9 @@ pub enum ServerToClient {
     #[serde(rename = "versionOk")]
     VersionOk {},
     #[serde(rename = "error")]
-    Error { message: String },
+    Error {
+        message: String,
+    },
 
     // Lobby responses
     #[serde(rename = "joinedLobby")]
@@ -83,20 +88,34 @@ pub enum ServerToClient {
     #[serde(rename = "playerLeftLobby")]
     PlayerLeftLobby {
         player_id: Uuid,
-        host_id: Option<Uuid>,
+        host_id: Uuid,
     },
     #[serde(rename = "updateLobbyOptions")]
     UpdateLobbyOptions {
         options: LobbyOptions,
     },
 
+    #[serde(rename = "gameStarted")]
+    GameStarted {
+        seed: String,
+        stake: i32,
+    },
+
+    #[serde(rename = "gameStopped")]
+    GameStoppend {
+    },
+
     #[serde(rename = "gameStateUpdate")]
     GameStateUpdate {
-        #[serde(rename = "player_id")]
         player_id: Uuid,
-        #[serde(rename = "gameState")]
-        game_state: serde_json::Value,
+        game_state: ClientGameState,
     },
+
+    #[serde(rename = "resetPlayers")]
+    ResetPlayers{
+        players: Vec<ClientLobbyEntry>,
+    },
+
     #[serde(rename = "playerReady")]
     PlayerReady {
         player_id: Uuid,
@@ -107,7 +126,9 @@ pub enum ServerToClient {
 impl ServerToClient {
     // Simple, safe JSON conversion - no unwrapping!
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|_| r#"{"action":"error","message":"Serialization failed"}"#.to_string())
+        serde_json::to_string(self).unwrap_or_else(|_| {
+            r#"{"action":"error","message":"Serialization failed"}"#.to_string()
+        })
     }
 
     // Helper constructors for common responses
@@ -134,7 +155,7 @@ impl ServerToClient {
         Self::PlayerJoinedLobby { player }
     }
 
-    pub fn player_left_lobby(player_id: Uuid, host_id: Option<Uuid>) -> Self {
+    pub fn player_left_lobby(player_id: Uuid, host_id: Uuid) -> Self {
         Self::PlayerLeftLobby { player_id, host_id }
     }
 }

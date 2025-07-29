@@ -5,8 +5,8 @@ use std::net::SocketAddr;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot};
-use uuid::Uuid;
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
 // Core client identity and connection info
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +57,7 @@ impl Client {
         if let Some(lobby_tx) = &self.lobby_channel {
             lobby_tx.send(message)
         } else {
-            Err(mpsc::error::SendError(message)) 
+            Err(mpsc::error::SendError(message))
         }
     }
 }
@@ -99,13 +99,8 @@ pub async fn handle_client(
                 // Parse action
                 match serde_json::from_str::<ClientToServer>(&line) {
                     Ok(action) => {
-                        handle_client_action(
-                            client.profile.id,
-                            action,
-                            &mut client,
-                            &writer_tx,
-                        )
-                        .await;
+                        handle_client_action(client.profile.id, action, &mut client, &writer_tx)
+                            .await;
                     }
                     Err(e) => {
                         error!("Failed to parse action from {}: {}", addr, e);
@@ -120,7 +115,10 @@ pub async fn handle_client(
     }
 
     // Cleanup on disconnect
-    let _ = coordinator_tx.send(CoordinatorMessage::ClientDisconnected { client_id: client.profile.id });
+    let _ = coordinator_tx.send(CoordinatorMessage::ClientDisconnected {
+        client_id: client.profile.id,
+        coordinator_tx: coordinator_tx.clone(),
+    });
 
     // Cancel background tasks
     write_task.abort();
@@ -185,7 +183,7 @@ async fn handle_client_action(
                 request_tx: tx,
             });
 
-            if let Ok (lobby_message) = rx.await {
+            if let Ok(lobby_message) = rx.await {
                 match lobby_message {
                     LobbyMessage::LobbyJoinData {
                         lobby_code,
@@ -225,7 +223,6 @@ async fn handle_client_action(
                         let error_response = ServerToClient::error("Failed to join lobby");
                         let _ = response_tx.send(error_response.to_json());
                     }
-                    
                 }
             }
         }
@@ -242,11 +239,17 @@ async fn handle_client_action(
                             error!("Failed to send LeaveLobby for client {}: {}", client_id, e);
                         }
                     } else {
-                        error!("Coordinator channel missing for client {} when leaving lobby", client_id);
+                        error!(
+                            "Coordinator channel missing for client {} when leaving lobby",
+                            client_id
+                        );
                     }
                 }
                 None => {
-                    error!("Lobby channel missing for client {} when leaving lobby", client_id);
+                    error!(
+                        "Lobby channel missing for client {} when leaving lobby",
+                        client_id
+                    );
                 }
             }
 
@@ -255,17 +258,50 @@ async fn handle_client_action(
         }
 
         ClientToServer::UpdateLobbyOptions { options } => {
-            let _ = client.send_to_lobby(LobbyMessage::UpdateLobbyOptions { player_id: client_id, options });
+            let _ = client.send_to_lobby(LobbyMessage::UpdateLobbyOptions {
+                player_id: client_id,
+                options,
+            });
         }
 
         // Handle new game actions
         ClientToServer::SetReady { is_ready } => {
-            let _ = client.send_to_lobby(LobbyMessage::SetReady { player_id: client_id, is_ready });
+            let _ = client.send_to_lobby(LobbyMessage::SetReady {
+                player_id: client_id,
+                is_ready,
+            });
         }
 
-        ClientToServer::UpdateGameState { .. } => {
-            // TODO: Implement game state updates
-            debug!("Client {} sent game state update", client_id);
+        ClientToServer::SetLocation { location } => {
+            let _ = client.send_to_lobby(LobbyMessage::SetLocation {
+                player_id: client_id,
+                location,
+            });
+        }
+
+        ClientToServer::StartGame { seed, stake } => {
+            let _ = client.send_to_lobby(LobbyMessage::StartGame {
+                player_id: client_id,
+                seed: seed.clone(),
+                stake: stake.clone(),
+            });
+        }
+
+        ClientToServer::StopGame {  }=> {
+            let _ = client.send_to_lobby(LobbyMessage::StopGame {
+                player_id: client_id,
+            });
+        }
+
+        ClientToServer::UpdateHandsAndDiscards {
+            hands_max,
+            discards_max,
+        } => {
+            let _ = client.send_to_lobby(LobbyMessage::UpdateHandsAndDiscards {
+                player_id: client_id,
+                hands_max,
+                discards_max,
+            });
         }
     }
 }

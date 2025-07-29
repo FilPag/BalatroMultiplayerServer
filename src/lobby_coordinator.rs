@@ -2,11 +2,12 @@ use crate::lobby::lobby_task;
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{info};
 
 /// Simple lobby coordinator that routes messages to individual lobby tasks
 pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessage>) {
     let mut lobby_senders: HashMap<String, mpsc::UnboundedSender<LobbyMessage>> = HashMap::new();
+    let mut client_lobbies: HashMap<uuid::Uuid, String> = HashMap::new();
 
     info!("Lobby coordinator started");
 
@@ -26,6 +27,7 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                 // Create the lobby task
                 let (lobby_tx, lobby_rx) = mpsc::unbounded_channel();
                 lobby_senders.insert(lobby_code.clone(), lobby_tx.clone());
+                client_lobbies.insert(client_id, lobby_code.clone());
                 // Spawn the lobby task
                 tokio::spawn(lobby_task(lobby_code.clone(), lobby_rx, ruleset, game_mode));
 
@@ -70,6 +72,7 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                             .to_string(),
                         );
                     } else {
+                        client_lobbies.insert(client_id, lobby_code.clone());
                     }
                 } else {
                     // Lobby doesn't exist
@@ -83,13 +86,18 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                 }
             }
 
-            CoordinatorMessage::LobbyShutdown{ lobby_code } => {
+            CoordinatorMessage::LobbyShutdown { lobby_code } => {
                 lobby_senders.remove(&lobby_code);
             }
 
-            CoordinatorMessage::ClientDisconnected { client_id } => {
-                // Remove client from any lobby they were in
-                debug!("Client {} disconnected", client_id);
+            CoordinatorMessage::ClientDisconnected { client_id, coordinator_tx} => {
+                if let Some(lobby_code) = client_lobbies.remove(&client_id) {
+                let lobby_tx = lobby_senders.get(&lobby_code);
+                let _ = lobby_tx.unwrap().send(LobbyMessage::LeaveLobby {
+                    player_id: client_id,
+                    coordinator_tx,
+                });
+                }
             }
         }
     }

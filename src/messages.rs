@@ -1,7 +1,7 @@
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use crate::client::{ClientProfile};
+use crate::client::ClientProfile;
 use crate::game_mode::{GameMode, LobbyOptions};
 
 /// Messages sent to the lobby coordinator
@@ -25,13 +25,14 @@ pub enum CoordinatorMessage {
         client_profile: ClientProfile,
     },
 
-    LobbyShutdown{
+    LobbyShutdown {
         lobby_code: String,
     },
 
     /// Client disconnected, clean up from any lobby
     ClientDisconnected {
         client_id: Uuid,
+        coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage>,
     },
 }
 
@@ -55,7 +56,54 @@ pub enum LobbyMessage {
         client_profile: ClientProfile,
     },
     /// A player left the lobby
-    LeaveLobby{ player_id: Uuid, coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage> },
+    LeaveLobby {
+        player_id: Uuid,
+        coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage>,
+    },
+
+    UpdateHandsAndDiscards {
+        player_id: Uuid,
+        hands_max: u8,
+        discards_max: u8,
+    },
+
+    StartGame {
+        player_id: Uuid,
+        seed: String,
+        stake: i32,
+    },
+
+    StopGame {
+        player_id: Uuid,
+    },
+
+    StartOnlineBlind {
+        player_id: Uuid,
+    },
+
+    SetBossBlind {
+        player_id: Uuid,
+        boss_blind: String,
+    },
+
+    PlayHand {
+        player_id: Uuid,
+        score: String,
+        hands_remaining: u8,
+    },
+
+    FailRound {
+        player_id: Uuid,
+    },
+
+    SetLocation {
+        player_id: Uuid,
+        location: String,
+    },
+
+    SkipBlind {
+        player_id: Uuid,
+    },
 
     SetReady {
         player_id: Uuid,
