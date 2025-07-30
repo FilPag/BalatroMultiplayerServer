@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::ops::AddAssign;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InsaneInt {
@@ -23,6 +24,11 @@ impl InsaneInt {
             exponent,
             e_count,
         }
+    }
+
+    // Dummy balance method for compatibility; implement as needed
+    pub fn balance(&mut self) {
+        // TODO: Implement balancing logic if needed
     }
 
     pub fn from_string(s: &str) -> Result<Self, String> {
@@ -68,6 +74,54 @@ impl InsaneInt {
         }
 
         self.coefficient > other.coefficient
+    }
+}
+
+impl AddAssign for InsaneInt {
+    fn add_assign(&mut self, other: Self) {
+        // Balance both numbers (if you have a balance method)
+        self.balance();
+        let mut other = other.clone();
+        other.balance();
+
+        // Make the e_counts the same
+        let mut my_e_count = self.e_count;
+        let mut my_coefficient = self.coefficient;
+        let mut my_exponent = self.exponent;
+
+        let mut other_e_count = other.e_count;
+        let mut other_coefficient = other.coefficient;
+        let mut other_exponent = other.exponent;
+
+        let mut e_count;
+        let coefficient;
+        let exponent;
+
+        if my_e_count > other_e_count {
+            other_exponent = other_exponent / 10f64.powi((my_e_count - other_e_count) as i32);
+            e_count = my_e_count;
+        } else if my_e_count < other_e_count {
+            my_exponent = my_exponent / 10f64.powi((other_e_count - my_e_count) as i32);
+            e_count = other_e_count;
+        } else {
+            e_count = my_e_count;
+        }
+
+        if my_exponent > other_exponent {
+            coefficient = other_coefficient / 10f64.powf(my_exponent - other_exponent) + my_coefficient;
+            exponent = my_exponent;
+        } else if my_exponent < other_exponent {
+            coefficient = my_coefficient / 10f64.powf(other_exponent - my_exponent) + other_coefficient;
+            exponent = other_exponent;
+        } else {
+            coefficient = my_coefficient + other_coefficient;
+            exponent = my_exponent;
+        }
+
+        self.e_count = e_count;
+        self.coefficient = coefficient;
+        self.exponent = exponent;
+        self.balance();
     }
 }
 

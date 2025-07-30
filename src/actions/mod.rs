@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::game_mode::{GameMode, LobbyOptions};
+use crate::insane_int::InsaneInt;
 use crate::lobby::{ClientGameState, ClientLobbyEntry};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -40,6 +41,14 @@ pub enum ClientToServer {
     #[serde(rename = "setReady")]
     SetReady { is_ready: bool },
 
+    #[serde(rename = "playHand")]
+    PlayHand {
+        score: InsaneInt,
+        hands_left: u8,
+    },
+
+    #[serde(rename = "discard")]
+    Discard { },
 
     #[serde(rename = "setLocation")]
     SetLocation { location: String },
@@ -102,8 +111,11 @@ pub enum ServerToClient {
         stake: i32,
     },
 
+    #[serde(rename = "startBlind")]
+    StartBlind {},
+
     #[serde(rename = "gameStopped")]
-    GameStoppend {
+    GameStopped {
     },
 
     #[serde(rename = "gameStateUpdate")]

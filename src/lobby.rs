@@ -70,6 +70,7 @@ pub struct ClientLobbyEntry {
 #[derive(Debug, Clone, Serialize)]
 struct Lobby {
     code: String,
+    started: bool,
     lobby_options: LobbyOptions,
     players: HashMap<Uuid, ClientLobbyEntry>,
 }
@@ -78,6 +79,7 @@ impl Lobby {
     fn new(code: String, game_mode: GameMode) -> Self {
         Self {
             code,
+            started: false,
             lobby_options: game_mode.get_default_options(),
             players: HashMap::new(),
         }
@@ -95,7 +97,7 @@ impl Lobby {
             },
             game_state: ClientGameState::default(),
         };
-        
+
         self.players.insert(player_id, lobby_entry.clone());
         lobby_entry
     }
@@ -121,6 +123,12 @@ impl Lobby {
         }
     }
 
+    fn reset_ready_states(&mut self) {
+        for player in self.players.values_mut() {
+            player.lobby_state.is_ready = false;
+        }
+    }
+
     fn reset_ready_states_to_host_only(&mut self) {
         for player in self.players.values_mut() {
             player.lobby_state.is_ready = player.lobby_state.is_host;
@@ -128,13 +136,15 @@ impl Lobby {
     }
 
     fn collect_ready_states(&self) -> HashMap<Uuid, bool> {
-        return self.players
+        return self
+            .players
             .iter()
             .map(|(&id, entry)| (id, entry.lobby_state.is_ready))
-            .collect()
+            .collect();
     }
 
     fn start_game(&mut self) {
+        self.started = true;
         for player in self.players.values_mut() {
             player.lobby_state.is_ready = false;
             player.game_state = ClientGameState::default();
@@ -151,6 +161,21 @@ impl Lobby {
         }
     }
 
+    fn reset_scores(&mut self) {
+        for player in self.players.values_mut() {
+            player.game_state.score = InsaneInt::empty();
+            player.game_state.hands_left = player.game_state.hands_max;
+            player.game_state.discards_left= player.game_state.discards_max;
+        }
+    }
+
+    fn start_online_blind(&mut self, broadcaster: &LobbyBroadcaster) {
+        self.reset_ready_states();
+        self.reset_scores();
+        broadcaster.broadcast(ServerToClient::StartBlind {});
+        self.broadcast_ready_states(broadcaster);
+    }
+
     fn is_player_host(&self, player_id: Uuid) -> bool {
         self.players
             .get(&player_id)
@@ -158,13 +183,18 @@ impl Lobby {
             .unwrap_or(false)
     }
 
-    fn broadcast_game_state_update(&self, broadcaster: &LobbyBroadcaster, player_id: Uuid, exclude_player: bool) {
+    fn broadcast_game_state_update(
+        &self,
+        broadcaster: &LobbyBroadcaster,
+        player_id: Uuid,
+        exclude_player: bool,
+    ) {
         if let Some(player) = self.players.get(&player_id) {
             let update = ServerToClient::GameStateUpdate {
                 player_id,
                 game_state: player.game_state.clone(),
             };
-            
+
             if exclude_player {
                 broadcaster.broadcast_except(player_id, update);
             } else {
@@ -183,7 +213,7 @@ impl Lobby {
 
     fn broadcast_ready_states(&self, broadcaster: &LobbyBroadcaster) {
         let ready_states = self.collect_ready_states();
-        broadcaster.broadcast(ServerToClient::LobbyReady { ready_states});
+        broadcaster.broadcast(ServerToClient::LobbyReady { ready_states });
     }
 
     fn broadcast_ready_states_except(&self, broadcaster: &LobbyBroadcaster, except_player: Uuid) {
@@ -257,6 +287,16 @@ pub async fn lobby_task(
                 client_response_tx,
                 client_profile,
             } => {
+                if lobby.started {
+                    let _ = client_response_tx.send(
+                        ServerToClient::Error {
+                            message: String::from("Lobby is already started"),
+                        }
+                        .to_json(),
+                    );
+                    continue;
+                }
+
                 broadcaster.add_player(player_id, client_response_tx.clone());
 
                 let lobby_entry = lobby.add_player(player_id, client_profile.clone());
@@ -295,7 +335,7 @@ pub async fn lobby_task(
                     });
                     break;
                 }
-                
+
                 if let Some(player) = leaving_player {
                     if player.lobby_state.is_host {
                         if let Some(new_host_id) = lobby.promote_new_host() {
@@ -332,20 +372,20 @@ pub async fn lobby_task(
                 if lobby.is_player_host(player_id) {
                     lobby.start_game();
                     broadcaster.broadcast(ServerToClient::GameStarted { seed, stake });
+                    lobby.broadcast_ready_states(&broadcaster);
                 }
             }
 
             LobbyMessage::StopGame { player_id: _ } => {
                 lobby.reset_game_states();
+                lobby.started = false;
 
-                broadcaster.broadcast(ServerToClient::GameStoppend {});
+                broadcaster.broadcast(ServerToClient::GameStopped {});
                 lobby.reset_ready_states_to_host_only();
                 lobby.broadcast_ready_states(&broadcaster);
-                broadcaster.broadcast(
-                    ServerToClient::ResetPlayers {
-                        players: lobby.players.values().cloned().collect(),
-                    },
-                );
+                broadcaster.broadcast(ServerToClient::ResetPlayers {
+                    players: lobby.players.values().cloned().collect(),
+                });
             }
 
             LobbyMessage::SetReady {
@@ -353,7 +393,14 @@ pub async fn lobby_task(
                 is_ready,
             } => {
                 if lobby.set_player_ready(player_id, is_ready) {
-                    lobby.broadcast_ready_states_except(&broadcaster, player_id);
+                    if lobby.started {
+                        let all_ready = lobby.players.values().all(|p| p.lobby_state.is_ready);
+                        if all_ready {
+                            lobby.start_online_blind(&broadcaster);
+                        }
+                    } else {
+                        lobby.broadcast_ready_states_except(&broadcaster, player_id);
+                    }
                 }
             }
             LobbyMessage::UpdateHandsAndDiscards {
@@ -370,14 +417,15 @@ pub async fn lobby_task(
             LobbyMessage::PlayHand {
                 player_id,
                 score,
-                hands_remaining,
+                hands_left,
             } => {
                 if let Some(player) = lobby.players.get_mut(&player_id) {
-                    player.game_state.score = InsaneInt::from_string(&score).unwrap_or_else(|e| {
-                        tracing::error!("Failed to parse score '{}': {}", score, e);
-                        InsaneInt::empty()
-                    });
-                    player.game_state.hands_left = hands_remaining;
+                    debug!(
+                        "Player {} played hand with score {} and hands left {}",
+                        player_id, score.to_string(), hands_left
+                    );
+                    player.game_state.score += score;
+                    player.game_state.hands_left = hands_left;
                 }
                 lobby.broadcast_game_state_except_player(&broadcaster, player_id);
             }
