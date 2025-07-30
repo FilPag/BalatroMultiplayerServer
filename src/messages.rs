@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::client::ClientProfile;
 use crate::game_mode::{GameMode, LobbyOptions};
+use crate::insane_int::InsaneInt;
 
 /// Messages sent to the lobby coordinator
 #[derive(Debug)]
@@ -88,8 +89,8 @@ pub enum LobbyMessage {
 
     PlayHand {
         player_id: Uuid,
-        score: String,
-        hands_remaining: u8,
+        score: InsaneInt,
+        hands_left: u8,
     },
 
     FailRound {
