@@ -1,5 +1,6 @@
+use std::collections::HashMap;
+
 use crate::game_mode::{GameMode, LobbyOptions};
-use crate::insane_int::InsaneInt;
 use crate::lobby::{ClientGameState, ClientLobbyEntry};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -57,7 +58,7 @@ pub enum ClientToServer {
 }
 
 // Server to Client Actions
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(tag = "action")]
 pub enum ServerToClient {
     // Connection responses
@@ -116,10 +117,9 @@ pub enum ServerToClient {
         players: Vec<ClientLobbyEntry>,
     },
 
-    #[serde(rename = "playerReady")]
-    PlayerReady {
-        player_id: Uuid,
-        is_ready: bool,
+    #[serde(rename = "lobbyReady")]
+    LobbyReady {
+        ready_states: HashMap<Uuid, bool>
     },
 }
 
