@@ -85,15 +85,15 @@ impl AddAssign for InsaneInt {
         other.balance();
 
         // Make the e_counts the same
-        let mut my_e_count = self.e_count;
-        let mut my_coefficient = self.coefficient;
+        let my_e_count = self.e_count;
+        let my_coefficient = self.coefficient;
         let mut my_exponent = self.exponent;
 
-        let mut other_e_count = other.e_count;
-        let mut other_coefficient = other.coefficient;
+        let other_e_count = other.e_count;
+        let other_coefficient = other.coefficient;
         let mut other_exponent = other.exponent;
 
-        let mut e_count;
+        let e_count;
         let coefficient;
         let exponent;
 
