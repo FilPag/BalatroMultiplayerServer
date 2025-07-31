@@ -50,6 +50,12 @@ pub enum ClientToServer {
     #[serde(rename = "discard")]
     Discard { },
 
+    #[serde(rename = "setBossBlind")]
+    SetBossBlind {
+        key: String,
+        chips: InsaneInt
+    },
+
     #[serde(rename = "setLocation")]
     SetLocation { location: String },
 
@@ -116,6 +122,22 @@ pub enum ServerToClient {
 
     #[serde(rename = "gameStopped")]
     GameStopped {
+    },
+
+    #[serde(rename = "loseGame")]
+    LoseGame {},
+
+    #[serde(rename = "winGame")]    
+    WinGame {},
+
+    #[serde(rename = "setBossBlind")]
+    SetBossBlind {
+        key: String,
+    },
+
+    #[serde(rename = "endPvp")]
+    EndPvp{
+        won: bool,
     },
 
     #[serde(rename = "gameStateUpdate")]

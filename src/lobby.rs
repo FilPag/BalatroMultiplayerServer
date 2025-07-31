@@ -1,12 +1,13 @@
 use crate::actions::ServerToClient;
-use crate::client::{Client, ClientProfile};
+use crate::client::ClientProfile;
 use crate::game_mode::{GameMode, LobbyOptions};
 use crate::insane_int::InsaneInt;
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
+use tracing_subscriber::field::debug;
 use uuid::Uuid;
 
 /// Simple lobby coordinator that routes messages to individual lobby tasks
@@ -71,6 +72,7 @@ pub struct ClientLobbyEntry {
 struct Lobby {
     code: String,
     started: bool,
+    boss_chips: InsaneInt,
     lobby_options: LobbyOptions,
     players: HashMap<Uuid, ClientLobbyEntry>,
 }
@@ -80,13 +82,14 @@ impl Lobby {
         Self {
             code,
             started: false,
+            boss_chips: InsaneInt::empty(),
             lobby_options: game_mode.get_default_options(),
             players: HashMap::new(),
         }
     }
 
     fn add_player(&mut self, player_id: Uuid, client_profile: ClientProfile) -> ClientLobbyEntry {
-        let lobby_entry = ClientLobbyEntry {
+        let mut lobby_entry = ClientLobbyEntry {
             profile: client_profile,
             lobby_state: ClientLobbyState {
                 current_lobby: Some(self.code.clone()),
@@ -98,8 +101,9 @@ impl Lobby {
             game_state: ClientGameState::default(),
         };
 
+        lobby_entry.game_state.lives = self.lobby_options.starting_lives;
         self.players.insert(player_id, lobby_entry.clone());
-        lobby_entry
+        return lobby_entry;
     }
 
     fn remove_player(&mut self, player_id: Uuid) -> Option<ClientLobbyEntry> {
@@ -165,8 +169,116 @@ impl Lobby {
         for player in self.players.values_mut() {
             player.game_state.score = InsaneInt::empty();
             player.game_state.hands_left = player.game_state.hands_max;
-            player.game_state.discards_left= player.game_state.discards_max;
+            player.game_state.discards_left = player.game_state.discards_max;
         }
+    }
+
+    fn get_total_score(&self) -> InsaneInt {
+        let mut acc = InsaneInt::empty();
+        for player in self.players.values() {
+            acc += player.game_state.score.clone();
+        }
+        return acc;
+    }
+
+    fn all_players_done(&self) -> bool {
+        self.players.values().all(|p| p.game_state.hands_left == 0)
+    }
+
+    fn evaluate_online_round(&mut self, broadcaster: &LobbyBroadcaster) -> bool {
+        if !self.all_players_done() {
+            return false;
+        }
+
+        debug!("Evaluating online round for lobby {}", self.code);
+
+        let (winners, losers) = self.check_round_victory();
+        self.apply_round_results(winners.clone(), losers.clone());
+
+        if self.is_someone_dead() {
+            debug!("Someone is dead in lobby {}, ending round", self.code);
+
+            for &player_id in winners.iter() {
+                broadcaster.send_to(player_id, ServerToClient::WinGame {});
+            }
+
+            for &player_id in losers.iter() {
+                broadcaster.send_to(player_id, ServerToClient::LoseGame {});
+            }
+        }
+
+        self.reset_scores();
+        self.broadcast_round_end(broadcaster, winners, losers);
+
+        true
+    }
+
+    fn check_round_victory(&self) -> (Vec<Uuid>, Vec<Uuid>) {
+        match self.lobby_options.gamemode {
+            GameMode::CoopSurvival => {
+                if self.get_total_score().greater_than(&self.boss_chips) {
+                    (self.players.keys().cloned().collect(), Vec::new())
+                } else {
+                    (Vec::new(), self.players.keys().cloned().collect())
+                }
+            }
+            _ => {
+                let mut player_entries: Vec<(&Uuid, &ClientLobbyEntry)> =
+                    self.players.iter().collect();
+                if player_entries.len() < 2 {
+                    error!("Not enough players to evaluate round");
+                    return (Vec::new(), Vec::new());
+                }
+
+                let top_score = &player_entries[0].1.game_state.score;
+                let winners: Vec<Uuid> = player_entries
+                    .iter()
+                    .filter(|(_, p)| p.game_state.score == *top_score)
+                    .map(|(id, _)| **id)
+                    .collect();
+                let losers: Vec<Uuid> = player_entries
+                    .iter()
+                    .filter(|(_, p)| p.game_state.score != *top_score)
+                    .map(|(id, _)| **id)
+                    .collect();
+
+                (winners, losers)
+            }
+        }
+    }
+
+    fn apply_round_results(&mut self, winners: Vec<Uuid>, losers: Vec<Uuid>) {
+        for loser in losers {
+            if let Some(player) = self.players.get_mut(&loser) {
+                player.game_state.lives -= 1;
+            }
+        }
+    }
+
+    fn broadcast_round_end(
+        &self,
+        broadcaster: &LobbyBroadcaster,
+        winners: Vec<Uuid>,
+        losers: Vec<Uuid>,
+    ) {
+        // Broadcast updated game states first
+        for player in self.players.values() {
+            self.broadcast_game_state_update(broadcaster, player.profile.id, false);
+        }
+
+        for &player_id in winners.iter() {
+            debug!("Player {} won the round in lobby {}", player_id, self.code);
+            broadcaster.send_to(player_id, ServerToClient::EndPvp { won: true });
+        }
+
+        for &player_id in losers.iter() {
+            debug!("Player {} lost the round in lobby {}", player_id, self.code);
+            broadcaster.send_to(player_id, ServerToClient::EndPvp { won: false });
+        }
+    }
+
+    fn is_someone_dead(&self) -> bool {
+        self.players.values().any(|p| p.game_state.lives == 0)
     }
 
     fn start_online_blind(&mut self, broadcaster: &LobbyBroadcaster) {
@@ -356,7 +468,7 @@ pub async fn lobby_task(
             LobbyMessage::UpdateLobbyOptions { player_id, options } => {
                 lobby.lobby_options = options;
                 lobby.reset_ready_states_to_host_only();
-                lobby.broadcast_ready_states(&broadcaster);
+                lobby.broadcast_ready_states_except(&broadcaster, player_id);
                 broadcaster.broadcast_except(
                     player_id,
                     ServerToClient::UpdateLobbyOptions {
@@ -376,7 +488,7 @@ pub async fn lobby_task(
                 }
             }
 
-            LobbyMessage::StopGame { player_id: _ } => {
+            LobbyMessage::StopGame { player_id } => {
                 lobby.reset_game_states();
                 lobby.started = false;
 
@@ -411,8 +523,8 @@ pub async fn lobby_task(
                 if let Some(player) = lobby.players.get_mut(&player_id) {
                     player.game_state.hands_max = hands_max;
                     player.game_state.discards_max = discards_max;
+                    lobby.broadcast_game_state_to_all(&broadcaster, player_id);
                 }
-                lobby.broadcast_game_state_to_all(&broadcaster, player_id);
             }
             LobbyMessage::PlayHand {
                 player_id,
@@ -422,21 +534,33 @@ pub async fn lobby_task(
                 if let Some(player) = lobby.players.get_mut(&player_id) {
                     debug!(
                         "Player {} played hand with score {} and hands left {}",
-                        player_id, score.to_string(), hands_left
+                        player_id,
+                        score.to_string(),
+                        hands_left
                     );
                     player.game_state.score += score;
                     player.game_state.hands_left = hands_left;
+                    if lobby.evaluate_online_round(&broadcaster) {
+                        // Round was evaluated and ended
+                    } else {
+                        lobby.broadcast_game_state_except_player(&broadcaster, player_id);
+                    }
                 }
-                lobby.broadcast_game_state_except_player(&broadcaster, player_id);
-            }
-            LobbyMessage::StartOnlineBlind { player_id: _ } => {
-                tracing::warn!("StartOnlineBlind handler not implemented");
             }
             LobbyMessage::SetBossBlind {
-                player_id: _,
-                boss_blind: _,
+                player_id,
+                key,
+                chips,
             } => {
-                tracing::warn!("SetBossBlind handler not implemented");
+                if lobby.is_player_host(player_id) {
+                    debug!(
+                        "Got SetBossBlind key: {}, chips: {}",
+                        key,
+                        chips.to_string()
+                    );
+                    lobby.boss_chips = chips;
+                    broadcaster.broadcast_except(player_id, ServerToClient::SetBossBlind { key });
+                }
             }
             LobbyMessage::FailRound { player_id: _ } => {
                 tracing::warn!("FailRound handler not implemented");

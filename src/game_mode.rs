@@ -45,6 +45,7 @@ pub struct BlindChoice {
 
 pub struct GameModeData {
     pub default_options: LobbyOptions,
+    pub max_players: u8,
 }
 
 impl GameMode {
@@ -64,6 +65,7 @@ impl GameMode {
 
 // Attrition game mode
 static ATTRITION_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
+    max_players: 2,
     default_options: LobbyOptions {
         back: String::from("Red Deck"),
         challenge: String::from(""),
@@ -89,6 +91,7 @@ static ATTRITION_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 
 // Showdown game mode
 static SHOWDOWN_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
+    max_players: 2,
     default_options: LobbyOptions {
         back: String::from("Red Deck"),
         challenge: String::from(""),
@@ -114,6 +117,7 @@ static SHOWDOWN_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 
 // Survival game mode
 static SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
+    max_players: 2,
     default_options: LobbyOptions {
         back: String::from("Red Deck"),
         challenge: String::from(""),
@@ -139,6 +143,7 @@ static SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
 
 // CoopSurvival game mode
 static COOP_SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
+    max_players: 6,
     default_options: LobbyOptions {
         back: String::from("Red Deck"),
         challenge: String::from(""),

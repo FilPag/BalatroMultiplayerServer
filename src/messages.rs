@@ -78,13 +78,10 @@ pub enum LobbyMessage {
         player_id: Uuid,
     },
 
-    StartOnlineBlind {
-        player_id: Uuid,
-    },
-
     SetBossBlind {
         player_id: Uuid,
-        boss_blind: String,
+        key: String,
+        chips: InsaneInt,
     },
 
     PlayHand {
