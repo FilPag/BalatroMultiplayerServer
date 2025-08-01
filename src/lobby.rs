@@ -3,11 +3,11 @@ use crate::client::ClientProfile;
 use crate::game_mode::{GameMode, LobbyOptions};
 use crate::insane_int::InsaneInt;
 use crate::messages::{CoordinatorMessage, LobbyMessage};
+use crate::utils::time_based_string;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
-use tracing_subscriber::field::debug;
 use uuid::Uuid;
 
 /// Simple lobby coordinator that routes messages to individual lobby tasks
@@ -124,6 +124,7 @@ impl Lobby {
         for player in self.players.values_mut() {
             player.lobby_state.is_ready = false;
             player.game_state = ClientGameState::default();
+            player.game_state.lives = self.lobby_options.starting_lives;
         }
     }
 
@@ -149,6 +150,10 @@ impl Lobby {
 
     fn start_game(&mut self) {
         self.started = true;
+        if (!self.lobby_options.different_seeds) && self.lobby_options.custom_seed == String::from("random"){
+            self.lobby_options.custom_seed = time_based_string(8);
+            debug!("Generating time-based seed for lobby {} seed: {}", self.code, self.lobby_options.custom_seed);
+        }
         for player in self.players.values_mut() {
             player.lobby_state.is_ready = false;
             player.game_state = ClientGameState::default();
@@ -205,6 +210,8 @@ impl Lobby {
             for &player_id in losers.iter() {
                 broadcaster.send_to(player_id, ServerToClient::LoseGame {});
             }
+
+            return true;
         }
 
         self.reset_scores();
@@ -217,7 +224,7 @@ impl Lobby {
         match self.lobby_options.gamemode {
             GameMode::CoopSurvival => {
                 if self.get_total_score().greater_than(&self.boss_chips) {
-                    (self.players.keys().cloned().collect(), Vec::new())
+                    (Vec::new(), Vec::new())
                 } else {
                     (Vec::new(), self.players.keys().cloned().collect())
                 }
@@ -483,7 +490,10 @@ pub async fn lobby_task(
             } => {
                 if lobby.is_player_host(player_id) {
                     lobby.start_game();
-                    broadcaster.broadcast(ServerToClient::GameStarted { seed, stake });
+                    broadcaster.broadcast(ServerToClient::ResetPlayers {
+                    players: lobby.players.values().cloned().collect(),
+                });
+                    broadcaster.broadcast(ServerToClient::GameStarted { seed: lobby.lobby_options.custom_seed.clone(), stake });
                     lobby.broadcast_ready_states(&broadcaster);
                 }
             }
@@ -495,9 +505,7 @@ pub async fn lobby_task(
                 broadcaster.broadcast(ServerToClient::GameStopped {});
                 lobby.reset_ready_states_to_host_only();
                 lobby.broadcast_ready_states(&broadcaster);
-                broadcaster.broadcast(ServerToClient::ResetPlayers {
-                    players: lobby.players.values().cloned().collect(),
-                });
+                
             }
 
             LobbyMessage::SetReady {
@@ -541,7 +549,6 @@ pub async fn lobby_task(
                     player.game_state.score += score;
                     player.game_state.hands_left = hands_left;
                     if lobby.evaluate_online_round(&broadcaster) {
-                        // Round was evaluated and ended
                     } else {
                         lobby.broadcast_game_state_except_player(&broadcaster, player_id);
                     }

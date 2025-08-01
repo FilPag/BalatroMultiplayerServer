@@ -2,7 +2,7 @@ use crate::lobby::lobby_task;
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::{info};
+use tracing::info;
 
 /// Simple lobby coordinator that routes messages to individual lobby tasks
 pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessage>) {
@@ -90,13 +90,17 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                 lobby_senders.remove(&lobby_code);
             }
 
-            CoordinatorMessage::ClientDisconnected { client_id, coordinator_tx} => {
+            CoordinatorMessage::ClientDisconnected {
+                client_id,
+                coordinator_tx,
+            } => {
                 if let Some(lobby_code) = client_lobbies.remove(&client_id) {
-                let lobby_tx = lobby_senders.get(&lobby_code);
-                let _ = lobby_tx.unwrap().send(LobbyMessage::LeaveLobby {
-                    player_id: client_id,
-                    coordinator_tx,
-                });
+                    if let Some(lobby_tx) = lobby_senders.get(&lobby_code) {
+                        let _ = lobby_tx.send(LobbyMessage::LeaveLobby {
+                            player_id: client_id,
+                            coordinator_tx,
+                        });
+                    }
                 }
             }
         }
