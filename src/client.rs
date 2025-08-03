@@ -146,165 +146,181 @@ async fn handle_client_action(
 ) {
     match action {
         ClientToServer::KeepAlive {} => {
-            // Simple keep-alive response
-            let response = ServerToClient::KeepAliveResponse {};
-            let _ = response_tx.send(response.to_json());
-        }
+                        // Simple keep-alive response
+                        let response = ServerToClient::KeepAliveResponse {};
+                        let _ = response_tx.send(response.to_json());
+            }
         ClientToServer::Version { version } => {
-            debug!("Client {} version: {}", client_id, version);
-            let response = ServerToClient::VersionOk {};
-            let _ = response_tx.send(response.to_json());
-        }
+                debug!("Client {} version: {}", client_id, version);
+                let response = ServerToClient::VersionOk {};
+                let _ = response_tx.send(response.to_json());
+            }
         ClientToServer::SetClientData {
-            username: new_username,
-            colour: new_colour,
-            mod_hash: new_mod_hash,
-        } => {
-            client.profile.username = new_username.clone();
-            client.profile.colour = new_colour as u8; // Convert i32 to u8
-            client.profile.mod_hash = new_mod_hash.clone();
+                username: new_username,
+                colour: new_colour,
+                mod_hash: new_mod_hash,
+            } => {
+                client.profile.username = new_username.clone();
+                client.profile.colour = new_colour as u8; // Convert i32 to u8
+                client.profile.mod_hash = new_mod_hash.clone();
 
-            debug!(
-                "Client {} set client data: username={}, colour={}, mod_hash={}",
-                client_id, new_username, new_colour, new_mod_hash
-            );
-        }
+                debug!(
+                    "Client {} set client data: username={}, colour={}, mod_hash={}",
+                    client_id, new_username, new_colour, new_mod_hash
+                );
+            }
         ClientToServer::CreateLobby { ruleset, game_mode } => {
-            let (tx, rx) = oneshot::channel::<LobbyMessage>();
-            let _ = client.send_to_coordinator(CoordinatorMessage::CreateLobby {
-                client_id,
-                ruleset,
-                game_mode,
-                client_response_tx: response_tx.clone(),
-                client_profile: client.profile.clone(),
-                request_tx: tx,
-            });
+                let (tx, rx) = oneshot::channel::<LobbyMessage>();
+                let _ = client.send_to_coordinator(CoordinatorMessage::CreateLobby {
+                    client_id,
+                    ruleset,
+                    game_mode,
+                    client_response_tx: response_tx.clone(),
+                    client_profile: client.profile.clone(),
+                    request_tx: tx,
+                });
 
-            if let Ok(lobby_message) = rx.await {
-                match lobby_message {
-                    LobbyMessage::LobbyJoinData {
-                        lobby_code,
-                        lobby_tx,
-                    } => {
-                        client.lobby_channel = Some(lobby_tx);
-                        client.current_lobby = Some(lobby_code);
-                    }
-                    _ => {
-                        let error_response = ServerToClient::error("Failed to create lobby");
-                        let _ = response_tx.send(error_response.to_json());
-                    }
-                }
-            }
-        }
-        ClientToServer::JoinLobby { code } => {
-            let (tx, rx) = oneshot::channel::<LobbyMessage>();
-            let _ = client.send_to_coordinator(CoordinatorMessage::JoinLobby {
-                client_id,
-                lobby_code: code,
-                client_response_tx: response_tx.clone(),
-                client_profile: client.profile.clone(),
-                request_tx: tx,
-            });
-
-            if let Ok(lobby_message) = rx.await {
-                match lobby_message {
-                    LobbyMessage::LobbyJoinData {
-                        lobby_code,
-                        lobby_tx,
-                    } => {
-                        client.lobby_channel = Some(lobby_tx);
-                        client.current_lobby = Some(lobby_code);
-                    }
-                    _ => {
-                        let error_response = ServerToClient::error("Failed to join lobby");
-                        let _ = response_tx.send(error_response.to_json());
-                    }
-                }
-            }
-        }
-        ClientToServer::LeaveLobby {} => {
-            info!("Client {} leaving lobby", client_id);
-            match client.lobby_channel.as_ref() {
-                Some(_) => {
-                    if let Some(coordinator_tx) = client.coordinator_channel.clone() {
-                        if let Err(e) = client.send_to_lobby(LobbyMessage::LeaveLobby {
-                            player_id: client_id,
-                            coordinator_tx,
-                        }) {
-                            error!("Failed to send LeaveLobby for client {}: {}", client_id, e);
+                if let Ok(lobby_message) = rx.await {
+                    match lobby_message {
+                        LobbyMessage::LobbyJoinData {
+                            lobby_code,
+                            lobby_tx,
+                        } => {
+                            client.lobby_channel = Some(lobby_tx);
+                            client.current_lobby = Some(lobby_code);
                         }
-                    } else {
+                        _ => {
+                            let error_response = ServerToClient::error("Failed to create lobby");
+                            let _ = response_tx.send(error_response.to_json());
+                        }
+                    }
+                }
+            }
+        ClientToServer::JoinLobby { code } => {
+                let (tx, rx) = oneshot::channel::<LobbyMessage>();
+                let _ = client.send_to_coordinator(CoordinatorMessage::JoinLobby {
+                    client_id,
+                    lobby_code: code,
+                    client_response_tx: response_tx.clone(),
+                    client_profile: client.profile.clone(),
+                    request_tx: tx,
+                });
+
+                if let Ok(lobby_message) = rx.await {
+                    match lobby_message {
+                        LobbyMessage::LobbyJoinData {
+                            lobby_code,
+                            lobby_tx,
+                        } => {
+                            client.lobby_channel = Some(lobby_tx);
+                            client.current_lobby = Some(lobby_code);
+                        }
+                        _ => {
+                            let error_response = ServerToClient::error("Failed to join lobby");
+                            let _ = response_tx.send(error_response.to_json());
+                        }
+                    }
+                }
+            }
+        ClientToServer::LeaveLobby {} => {
+                info!("Client {} leaving lobby", client_id);
+                match client.lobby_channel.as_ref() {
+                    Some(_) => {
+                        if let Some(coordinator_tx) = client.coordinator_channel.clone() {
+                            if let Err(e) = client.send_to_lobby(LobbyMessage::LeaveLobby {
+                                player_id: client_id,
+                                coordinator_tx,
+                            }) {
+                                error!("Failed to send LeaveLobby for client {}: {}", client_id, e);
+                            }
+                        } else {
+                            error!(
+                                "Coordinator channel missing for client {} when leaving lobby",
+                                client_id
+                            );
+                        }
+                    }
+                    None => {
                         error!(
-                            "Coordinator channel missing for client {} when leaving lobby",
+                            "Lobby channel missing for client {} when leaving lobby",
                             client_id
                         );
                     }
                 }
-                None => {
-                    error!(
-                        "Lobby channel missing for client {} when leaving lobby",
-                        client_id
-                    );
-                }
-            }
 
-            client.current_lobby = None;
-            client.lobby_channel = None;
-        }
+                client.current_lobby = None;
+                client.lobby_channel = None;
+            }
         ClientToServer::UpdateLobbyOptions { options } => {
-            let _ = client.send_to_lobby(LobbyMessage::UpdateLobbyOptions {
-                player_id: client_id,
-                options,
-            });
-        }
+                let _ = client.send_to_lobby(LobbyMessage::UpdateLobbyOptions {
+                    player_id: client_id,
+                    options,
+                });
+            }
         ClientToServer::SetReady { is_ready } => {
-            let _ = client.send_to_lobby(LobbyMessage::SetReady {
-                player_id: client_id,
-                is_ready,
-            });
-        }
+                let _ = client.send_to_lobby(LobbyMessage::SetReady {
+                    player_id: client_id,
+                    is_ready,
+                });
+            }
         ClientToServer::SetLocation { location } => {
-            let _ = client.send_to_lobby(LobbyMessage::SetLocation {
-                player_id: client_id,
-                location,
-            });
-        }
+                let _ = client.send_to_lobby(LobbyMessage::SetLocation {
+                    player_id: client_id,
+                    location,
+                });
+            }
         ClientToServer::StartGame { seed, stake } => {
-            let _ = client.send_to_lobby(LobbyMessage::StartGame {
-                player_id: client_id,
-                seed: seed.clone(),
-                stake: stake.clone(),
-            });
-        }
+                let _ = client.send_to_lobby(LobbyMessage::StartGame {
+                    player_id: client_id,
+                    seed: seed.clone(),
+                    stake: stake.clone(),
+                });
+            }
         ClientToServer::StopGame {} => {
-            let _ = client.send_to_lobby(LobbyMessage::StopGame {
-                player_id: client_id,
-            });
-        }
+                let _ = client.send_to_lobby(LobbyMessage::StopGame {
+                    player_id: client_id,
+                });
+            }
         ClientToServer::UpdateHandsAndDiscards {
-            hands_max,
-            discards_max,
-        } => {
-            let _ = client.send_to_lobby(LobbyMessage::UpdateHandsAndDiscards {
-                player_id: client_id,
                 hands_max,
                 discards_max,
-            });
-        }
+            } => {
+                let _ = client.send_to_lobby(LobbyMessage::UpdateHandsAndDiscards {
+                    player_id: client_id,
+                    hands_max,
+                    discards_max,
+                });
+            }
         ClientToServer::PlayHand { score, hands_left } => {
-            let _ = client.send_to_lobby(LobbyMessage::PlayHand {
-                player_id: client_id,
-                score,
-                hands_left,
-            });
-        }
+                let _ = client.send_to_lobby(LobbyMessage::PlayHand {
+                    player_id: client_id,
+                    score,
+                    hands_left,
+                });
+            }
         ClientToServer::Discard {} => todo!(),
         ClientToServer::SetBossBlind { key, chips } => {
-            let _ = client.send_to_lobby(LobbyMessage::SetBossBlind {
-                player_id: client_id,
-                key,
-                chips,
-            });
-        }
+                let _ = client.send_to_lobby(LobbyMessage::SetBossBlind {
+                    player_id: client_id,
+                    key,
+                    chips,
+                });
+            }
+        ClientToServer::Skip {} => {
+                let _ = client.send_to_lobby(LobbyMessage::Skip {
+                    player_id: client_id,
+                });
+            }
+        ClientToServer::FailRound {} => {
+                let _ = client.send_to_lobby(LobbyMessage::FailRound {
+                    player_id: client_id,
+                });
+            },
+        ClientToServer::sendPlayerDeck { deck } => {
+                let _ = client.send_to_lobby(LobbyMessage::sendPlayerDeck {
+                    player_id: client_id,
+                    deck,
+                });
+            }
     }
 }

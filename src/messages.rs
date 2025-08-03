@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::client::ClientProfile;
 use crate::game_mode::{GameMode, LobbyOptions};
-use crate::insane_int::InsaneInt;
+use crate::talisman_number::TalismanNumber;
 
 /// Messages sent to the lobby coordinator
 #[derive(Debug)]
@@ -78,16 +78,25 @@ pub enum LobbyMessage {
         player_id: Uuid,
     },
 
+    Skip{
+        player_id: Uuid,
+    },
+
     SetBossBlind {
         player_id: Uuid,
         key: String,
-        chips: InsaneInt,
+        chips: TalismanNumber,
     },
 
     PlayHand {
         player_id: Uuid,
-        score: InsaneInt,
+        score: TalismanNumber,
         hands_left: u8,
+    },
+
+    sendPlayerDeck {
+        player_id: Uuid,
+        deck: String,
     },
 
     FailRound {

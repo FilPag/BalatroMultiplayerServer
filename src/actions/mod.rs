@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::game_mode::{GameMode, LobbyOptions};
-use crate::insane_int::InsaneInt;
 use crate::lobby::{ClientGameState, ClientLobbyEntry};
+use crate::talisman_number::TalismanNumber;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,6 +29,14 @@ pub enum ClientToServer {
         #[serde(rename = "gameMode")]
         game_mode: GameMode,
     },
+
+    #[serde(rename = "failRound")]
+    FailRound {},
+
+    sendPlayerDeck {
+        deck: String,
+    },
+
     #[serde(rename = "joinLobby")]
     JoinLobby { code: String },
     #[serde(rename = "leaveLobby")]
@@ -43,7 +51,7 @@ pub enum ClientToServer {
 
     #[serde(rename = "playHand")]
     PlayHand {
-        score: InsaneInt,
+        score: TalismanNumber,
         hands_left: u8,
     },
 
@@ -53,8 +61,11 @@ pub enum ClientToServer {
     #[serde(rename = "setBossBlind")]
     SetBossBlind {
         key: String,
-        chips: InsaneInt
+        chips: TalismanNumber 
     },
+
+    #[serde(rename = "skip")]
+    Skip {},
 
     #[serde(rename = "setLocation")]
     SetLocation { location: String },
@@ -129,6 +140,12 @@ pub enum ServerToClient {
 
     #[serde(rename = "winGame")]    
     WinGame {},
+
+    #[serde(rename = "receivePlayerDeck")]
+    ReceivePlayerDeck {
+        player_id: Uuid,
+        deck: String,
+    },
 
     #[serde(rename = "setBossBlind")]
     SetBossBlind {
