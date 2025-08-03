@@ -11,6 +11,7 @@ mod insane_int;
 mod lobby;
 mod lobby_coordinator;
 mod messages;
+mod talisman_number;
 mod utils;
 
 use crate::client::handle_client;
