@@ -80,6 +80,7 @@ pub enum LobbyMessage {
 
     Skip{
         player_id: Uuid,
+        blind: u32,
     },
 
     SetBossBlind {
@@ -94,7 +95,12 @@ pub enum LobbyMessage {
         hands_left: u8,
     },
 
-    sendPlayerDeck {
+    SetFurthestBlind {
+        player_id: Uuid,
+        blind: u32,
+    },
+
+    SendPlayerDeck {
         player_id: Uuid,
         deck: String,
     },
@@ -108,12 +114,50 @@ pub enum LobbyMessage {
         location: String,
     },
 
-    SkipBlind {
-        player_id: Uuid,
-    },
-
     SetReady {
         player_id: Uuid,
         is_ready: bool,
+    },
+
+    // Multiplayer joker actions
+    SendPhantom {
+        player_id: Uuid,
+        key: String,
+    },
+    
+    RemovePhantom {
+        player_id: Uuid,
+        key: String,
+    },
+    
+    Asteroid {
+        player_id: Uuid,
+    },
+    
+    LetsGoGamblingNemesis {
+        player_id: Uuid,
+    },
+    
+    EatPizza {
+        player_id: Uuid,
+        discards: u8,
+    },
+    
+    SoldJoker {
+        player_id: Uuid,
+    },
+    
+    SpentLastShop {
+        player_id: Uuid,
+        amount: u32,
+    },
+    
+    Magnet {
+        player_id: Uuid,
+    },
+    
+    MagnetResponse {
+        player_id: Uuid,
+        key: String,
     },
 }
