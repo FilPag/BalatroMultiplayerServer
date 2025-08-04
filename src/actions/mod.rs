@@ -33,9 +33,11 @@ pub enum ClientToServer {
     #[serde(rename = "failRound")]
     FailRound {},
 
-    sendPlayerDeck {
-        deck: String,
-    },
+    #[serde(rename = "sendPlayerDeck")]
+    SendPlayerDeck { deck: String },
+
+    #[serde(rename = "setFurthestBlind")]
+    SetFurthestBlind { blind: u32 },
 
     #[serde(rename = "joinLobby")]
     JoinLobby { code: String },
@@ -56,31 +58,55 @@ pub enum ClientToServer {
     },
 
     #[serde(rename = "discard")]
-    Discard { },
+    Discard {},
 
     #[serde(rename = "setBossBlind")]
-    SetBossBlind {
-        key: String,
-        chips: TalismanNumber 
-    },
+    SetBossBlind { key: String, chips: TalismanNumber },
 
     #[serde(rename = "skip")]
-    Skip {},
+    Skip {
+        blind: u32,
+    },
 
     #[serde(rename = "setLocation")]
     SetLocation { location: String },
 
     #[serde(rename = "startGame")]
-    StartGame {
-        seed: String,
-        stake: i32,
-    },
+    StartGame { seed: String, stake: i32 },
 
     #[serde(rename = "stopGame")]
     StopGame {},
 
     #[serde(rename = "updateHandsAndDiscards")]
     UpdateHandsAndDiscards { hands_max: u8, discards_max: u8 },
+
+    // Multiplayer joker actions
+    #[serde(rename = "sendPhantom")]
+    SendPhantom { key: String },
+
+    #[serde(rename = "removePhantom")]
+    RemovePhantom { key: String },
+
+    #[serde(rename = "asteroid")]
+    Asteroid {},
+
+    #[serde(rename = "letsGoGamblingNemesis")]
+    LetsGoGamblingNemesis {},
+
+    #[serde(rename = "eatPizza")]
+    EatPizza { discards: u8 },
+
+    #[serde(rename = "soldJoker")]
+    SoldJoker {},
+
+    #[serde(rename = "spentLastShop")]
+    SpentLastShop { amount: u32 },
+
+    #[serde(rename = "magnet")]
+    Magnet {},
+
+    #[serde(rename = "magnetResponse")]
+    MagnetResponse { key: String },
 }
 
 // Server to Client Actions
@@ -98,9 +124,7 @@ pub enum ServerToClient {
     #[serde(rename = "versionOk")]
     VersionOk {},
     #[serde(rename = "error")]
-    Error {
-        message: String,
-    },
+    Error { message: String },
 
     // Lobby responses
     #[serde(rename = "joinedLobby")]
@@ -109,53 +133,35 @@ pub enum ServerToClient {
         lobby_data: serde_json::Value, // Using Value to avoid circular dependency
     },
     #[serde(rename = "playerJoinedLobby")]
-    PlayerJoinedLobby {
-        player: ClientLobbyEntry,
-    },
+    PlayerJoinedLobby { player: ClientLobbyEntry },
     #[serde(rename = "playerLeftLobby")]
-    PlayerLeftLobby {
-        player_id: Uuid,
-        host_id: Uuid,
-    },
+    PlayerLeftLobby { player_id: Uuid, host_id: Uuid },
     #[serde(rename = "updateLobbyOptions")]
-    UpdateLobbyOptions {
-        options: LobbyOptions,
-    },
+    UpdateLobbyOptions { options: LobbyOptions },
 
     #[serde(rename = "gameStarted")]
-    GameStarted {
-        seed: String,
-        stake: i32,
-    },
+    GameStarted { seed: String, stake: i32 },
 
     #[serde(rename = "startBlind")]
     StartBlind {},
 
     #[serde(rename = "gameStopped")]
-    GameStopped {
-    },
+    GameStopped {},
 
     #[serde(rename = "loseGame")]
     LoseGame {},
 
-    #[serde(rename = "winGame")]    
+    #[serde(rename = "winGame")]
     WinGame {},
 
     #[serde(rename = "receivePlayerDeck")]
-    ReceivePlayerDeck {
-        player_id: Uuid,
-        deck: String,
-    },
+    ReceivePlayerDeck { player_id: Uuid, deck: String },
 
     #[serde(rename = "setBossBlind")]
-    SetBossBlind {
-        key: String,
-    },
+    SetBossBlind { key: String },
 
     #[serde(rename = "endPvp")]
-    EndPvp{
-        won: bool,
-    },
+    EndPvp { won: bool },
 
     #[serde(rename = "gameStateUpdate")]
     GameStateUpdate {
@@ -164,14 +170,38 @@ pub enum ServerToClient {
     },
 
     #[serde(rename = "resetPlayers")]
-    ResetPlayers{
-        players: Vec<ClientLobbyEntry>,
-    },
+    ResetPlayers { players: Vec<ClientLobbyEntry> },
 
     #[serde(rename = "lobbyReady")]
-    LobbyReady {
-        ready_states: HashMap<Uuid, bool>
-    },
+    LobbyReady { ready_states: HashMap<Uuid, bool> },
+
+    // Multiplayer joker responses
+    #[serde(rename = "sendPhantom")]
+    SendPhantom { key: String },
+
+    #[serde(rename = "removePhantom")]
+    RemovePhantom { key: String },
+
+    #[serde(rename = "asteroid")]
+    Asteroid {},
+
+    #[serde(rename = "letsGoGamblingNemesis")]
+    LetsGoGamblingNemesis {},
+
+    #[serde(rename = "eatPizza")]
+    EatPizza { discards: u8 },
+
+    #[serde(rename = "soldJoker")]
+    SoldJoker {},
+
+    #[serde(rename = "spentLastShop")]
+    SpentLastShop { player_id: Uuid, amount: u32 },
+
+    #[serde(rename = "magnet")]
+    Magnet {},
+
+    #[serde(rename = "magnetResponse")]
+    MagnetResponse { key: String },
 }
 
 impl ServerToClient {

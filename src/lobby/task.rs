@@ -1,8 +1,4 @@
-use super::{
-    broadcaster::LobbyBroadcaster,
-    handlers::LobbyHandlers,
-    lobby::Lobby,
-};
+use super::{broadcaster::LobbyBroadcaster, handlers::LobbyHandlers, lobby::Lobby};
 use crate::{
     actions::ServerToClient,
     game_mode::GameMode,
@@ -30,13 +26,18 @@ pub async fn lobby_task(
 
     while let Some(msg) = rx.recv().await {
         match msg {
-            // KISS: Each handler does one thing
             LobbyMessage::PlayHand {
                 player_id,
                 score,
                 hands_left,
             } => {
-                LobbyHandlers::handle_play_hand(&mut lobby, &broadcaster, player_id, score, hands_left);
+                LobbyHandlers::handle_play_hand(
+                    &mut lobby,
+                    &broadcaster,
+                    player_id,
+                    score,
+                    hands_left,
+                );
             }
             LobbyMessage::SetLocation {
                 player_id,
@@ -44,8 +45,8 @@ pub async fn lobby_task(
             } => {
                 LobbyHandlers::handle_set_location(&mut lobby, &broadcaster, player_id, location);
             }
-            LobbyMessage::Skip { player_id } => {
-                LobbyHandlers::handle_skip(&mut lobby, &broadcaster, player_id);
+            LobbyMessage::Skip { player_id, blind } => {
+                LobbyHandlers::handle_skip(&mut lobby, &broadcaster, player_id, blind);
             }
             LobbyMessage::UpdateHandsAndDiscards {
                 player_id,
@@ -162,6 +163,7 @@ pub async fn lobby_task(
             LobbyMessage::StopGame { player_id: _ } => {
                 lobby.reset_game_states();
                 lobby.started = false;
+                lobby.lobby_options.custom_seed = String::from("random");
 
                 broadcaster.broadcast(ServerToClient::GameStopped {});
                 lobby.reset_ready_states_to_host_only();
@@ -197,17 +199,44 @@ pub async fn lobby_task(
                     broadcaster.broadcast_except(player_id, ServerToClient::SetBossBlind { key });
                 }
             }
-            LobbyMessage::sendPlayerDeck { player_id, deck } => {
-                broadcaster.broadcast(ServerToClient::ReceivePlayerDeck {
-                    player_id,
-                    deck,
-                });
+            LobbyMessage::SendPlayerDeck { player_id, deck } => {
+                broadcaster.broadcast(ServerToClient::ReceivePlayerDeck { player_id, deck });
+            }
+            LobbyMessage::SendPhantom { player_id, key } => {
+                LobbyHandlers::handle_send_phantom(&broadcaster, player_id, key);
+            }
+            LobbyMessage::RemovePhantom { player_id, key } => {
+                LobbyHandlers::handle_remove_phantom(&broadcaster, player_id, key);
+            }
+            LobbyMessage::Asteroid { player_id } => {
+                LobbyHandlers::handle_asteroid(&broadcaster, player_id);
+            }
+            LobbyMessage::LetsGoGamblingNemesis { player_id } => {
+                LobbyHandlers::handle_lets_go_gambling_nemesis(&broadcaster, player_id);
+            }
+            LobbyMessage::EatPizza {
+                player_id,
+                discards,
+            } => {
+                LobbyHandlers::handle_eat_pizza(&broadcaster, player_id, discards);
+            }
+            LobbyMessage::SoldJoker { player_id } => {
+                LobbyHandlers::handle_sold_joker(&broadcaster, player_id);
+            }
+            LobbyMessage::SpentLastShop { player_id, amount } => {
+                LobbyHandlers::handle_spent_last_shop(&broadcaster, player_id, amount);
+            }
+            LobbyMessage::Magnet { player_id } => {
+                LobbyHandlers::handle_magnet(&broadcaster, player_id);
+            }
+            LobbyMessage::MagnetResponse { player_id, key } => {
+                LobbyHandlers::handle_magnet_response(&broadcaster, player_id, key);
             }
             LobbyMessage::LobbyJoinData { .. } => {
                 tracing::warn!("LobbyJoinData handler not implemented");
             }
-            LobbyMessage::SkipBlind { player_id: _ } => {
-                tracing::warn!("SkipBlind handler not implemented");
+            LobbyMessage::SetFurthestBlind { player_id, blind } => {
+                LobbyHandlers::set_furthest_blind(&mut lobby, &broadcaster, player_id, blind);
             }
         }
     }

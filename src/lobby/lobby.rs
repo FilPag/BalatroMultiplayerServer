@@ -7,6 +7,7 @@ use crate::{
     utils::time_based_string,
 };
 use serde::Serialize;
+use tracing_subscriber::field::debug;
 use std::collections::HashMap;
 use tracing::{debug, error};
 use uuid::Uuid;
@@ -45,7 +46,11 @@ impl Lobby {
     }
 
     // DRY: Extract common player operations
-    pub fn add_player(&mut self, player_id: Uuid, client_profile: ClientProfile) -> ClientLobbyEntry {
+    pub fn add_player(
+        &mut self,
+        player_id: Uuid,
+        client_profile: ClientProfile,
+    ) -> ClientLobbyEntry {
         let is_host = self.players.is_empty();
         let entry = ClientLobbyEntry::new(
             client_profile,
@@ -158,7 +163,7 @@ impl Lobby {
             return false;
         }
 
-        debug!("Evaluating boss battle for lobby {}", self.code);
+        debug!("Evaluating online battle for lobby {}", self.code);
 
         let (winners, losers) = self.check_round_victory();
         self.apply_round_results(&losers);
@@ -176,11 +181,28 @@ impl Lobby {
         game_ended
     }
 
-    pub fn handle_player_fail_round(&mut self, player_id: Uuid, broadcaster: &LobbyBroadcaster) -> bool {
+    //TODO should work with survival where players wait for other to fail or reach the same or a latter round
+    pub fn handle_player_fail_round(
+        &mut self,
+        player_id: Uuid,
+        broadcaster: &LobbyBroadcaster,
+    ) -> bool {
         debug!("Player {} failed a round in lobby {}", player_id, self.code);
 
-        self.apply_fail_round_life_loss(player_id);
+        self.apply_life_loss(player_id);
         self.broadcast_life_updates(broadcaster, player_id);
+
+        if self.lobby_options.gamemode == GameMode::Survival {
+            // Check if all players are dead - if so, determine winner by furthest blind
+            debug!("Checking if all players are dead in lobby {}", self.code);
+            if self.all_players_dead() {
+                debug!("All players are dead in lobby {}", self.code);
+                let (winners, losers) = self.get_survival_winners_losers();
+                self.handle_game_end(broadcaster, &winners, &losers);
+                return true;
+            }
+            return false;
+        }
 
         let game_ended = self.is_someone_dead();
 
@@ -201,23 +223,36 @@ impl Lobby {
                     (Vec::new(), self.players.keys().cloned().collect())
                 }
             }
+
+            GameMode::Survival => {
+                //Compare furthest blind in games state of all players. player with furthest blind wins
+                self.get_survival_winners_losers()
+            }
             _ => {
-                let player_entries: Vec<(&Uuid, &ClientLobbyEntry)> = self.players.iter().collect();
-                if player_entries.len() < 2 {
+                if self.players.len() < 2 {
                     error!("Not enough players to evaluate round");
                     return (Vec::new(), Vec::new());
                 }
 
-                let top_score = &player_entries[0].1.game_state.score;
-                let winners: Vec<Uuid> = player_entries
+                // Find the actual highest score
+                let top_score = self
+                    .players
+                    .values()
+                    .map(|p| &p.game_state.score)
+                    .max()
+                    .unwrap(); // Safe because we checked players.len() >= 2
+
+                let winners: Vec<Uuid> = self
+                    .players
                     .iter()
                     .filter(|(_, p)| p.game_state.score == *top_score)
-                    .map(|(id, _)| **id)
+                    .map(|(id, _)| *id)
                     .collect();
-                let losers: Vec<Uuid> = player_entries
+                let losers: Vec<Uuid> = self
+                    .players
                     .iter()
                     .filter(|(_, p)| p.game_state.score != *top_score)
-                    .map(|(id, _)| **id)
+                    .map(|(id, _)| *id)
                     .collect();
 
                 (winners, losers)
@@ -227,9 +262,7 @@ impl Lobby {
 
     fn determine_game_end_results(&self) -> (Vec<Uuid>, Vec<Uuid>) {
         match self.lobby_options.gamemode {
-            GameMode::CoopSurvival => {
-                (Vec::new(), self.players.keys().cloned().collect())
-            }
+            GameMode::CoopSurvival => (Vec::new(), self.players.keys().cloned().collect()),
             _ => {
                 let mut winners = Vec::new();
                 let mut losers = Vec::new();
@@ -255,7 +288,7 @@ impl Lobby {
         }
     }
 
-    fn apply_fail_round_life_loss(&mut self, player_id: Uuid) {
+    fn apply_life_loss(&mut self, player_id: Uuid) {
         if !self.lobby_options.death_on_round_loss {
             return;
         }
@@ -275,7 +308,7 @@ impl Lobby {
     }
 
     fn handle_game_end(&self, broadcaster: &LobbyBroadcaster, winners: &[Uuid], losers: &[Uuid]) {
-        debug!("Someone is dead in lobby {}, ending game", self.code);
+        debug!("Game Over in lobby {}, ending game", self.code);
         self.send_outcome_messages(broadcaster, winners, losers, true);
     }
 
@@ -349,7 +382,11 @@ impl Lobby {
         broadcaster.broadcast(ServerToClient::LobbyReady { ready_states });
     }
 
-    pub fn broadcast_ready_states_except(&self, broadcaster: &LobbyBroadcaster, except_player: Uuid) {
+    pub fn broadcast_ready_states_except(
+        &self,
+        broadcaster: &LobbyBroadcaster,
+        except_player: Uuid,
+    ) {
         let ready_states = self.collect_ready_states();
         broadcaster.broadcast_except(except_player, ServerToClient::LobbyReady { ready_states });
     }
@@ -359,5 +396,63 @@ impl Lobby {
         self.reset_scores();
         broadcaster.broadcast(ServerToClient::StartBlind {});
         self.broadcast_ready_states(broadcaster);
+    }
+
+    // Survival mode helper methods
+    fn all_players_dead(&self) -> bool {
+            let all_dead = self.players.values().all(|p| p.game_state.lives == 0);
+            for (id, player) in &self.players {
+                debug!("Player {} has {} lives", id, player.game_state.lives);
+            }
+            return all_dead;
+        }
+
+    fn all_other_players_dead(&self, except_player_id: Uuid) -> bool {
+        self.players
+            .iter()
+            .filter(|(id, _)| **id != except_player_id)
+            .all(|(_, p)| p.game_state.lives == 0)
+    }
+
+    fn get_max_furthest_blind(&self) -> u32 {
+        self.players
+            .values()
+            .map(|p| p.game_state.furthest_blind)
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn get_survival_winners_losers(&self) -> (Vec<Uuid>, Vec<Uuid>) {
+        let max_furthest_blind = self.get_max_furthest_blind();
+
+        let mut winners = Vec::new();
+        let mut losers = Vec::new();
+
+        for (&player_id, player) in &self.players {
+            if player.game_state.furthest_blind == max_furthest_blind {
+                winners.push(player_id);
+            } else {
+                losers.push(player_id);
+            }
+        }
+        (winners, losers)
+    }
+
+    pub fn check_survival_furthest_blind_win(
+        &mut self,
+        broadcaster: &LobbyBroadcaster,
+        player_id: Uuid,
+    ) -> bool {
+        // Only check if all other players are dead and this player has the max furthest blind
+        if self.all_other_players_dead(player_id) {
+            if let Some(player) = self.players.get(&player_id) {
+                if player.game_state.furthest_blind == self.get_max_furthest_blind() {
+                    let (winners, losers) = self.get_survival_winners_losers();
+                    self.handle_game_end(broadcaster, &winners, &losers);
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
