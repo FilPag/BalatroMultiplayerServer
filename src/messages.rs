@@ -78,7 +78,7 @@ pub enum LobbyMessage {
         player_id: Uuid,
     },
 
-    Skip{
+    Skip {
         player_id: Uuid,
         blind: u32,
     },
@@ -124,38 +124,51 @@ pub enum LobbyMessage {
         player_id: Uuid,
         key: String,
     },
-    
+
     RemovePhantom {
         player_id: Uuid,
         key: String,
     },
-    
+
     Asteroid {
         player_id: Uuid,
     },
-    
+
     LetsGoGamblingNemesis {
         player_id: Uuid,
     },
-    
+
     EatPizza {
         player_id: Uuid,
         discards: u8,
     },
-    
+
     SoldJoker {
         player_id: Uuid,
     },
-    
+
+    StartAnteTimer {
+        player_id: Uuid,
+        time: u32,
+    },
+    PauseAnteTimer {
+        player_id: Uuid,
+        time: u32,
+    },
+
+    FailTimer {
+        player_id: Uuid,
+    },
+
     SpentLastShop {
         player_id: Uuid,
         amount: u32,
     },
-    
+
     Magnet {
         player_id: Uuid,
     },
-    
+
     MagnetResponse {
         player_id: Uuid,
         key: String,

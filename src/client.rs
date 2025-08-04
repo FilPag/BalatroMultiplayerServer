@@ -99,8 +99,19 @@ pub async fn handle_client(
                 // Parse action
                 match serde_json::from_str::<ClientToServer>(&line) {
                     Ok(action) => {
-                        handle_client_action(client.profile.id, action, &mut client, &writer_tx)
-                            .await;
+                        if let Err(e) =
+                            handle_client_action(client.profile.id, action, &mut client, &writer_tx)
+                                .await
+                        {
+                            error!(
+                                "Error handling action for client {}: {}",
+                                client.profile.id, e
+                            );
+                            // Optionally send error response to client
+                            let error_response =
+                                ServerToClient::error(&format!("Action failed: {}", e));
+                            let _ = writer_tx.send(error_response.to_json());
+                        }
                     }
                     Err(e) => {
                         error!("Failed to parse action from {}: {}", addr, e);
@@ -143,17 +154,17 @@ async fn handle_client_action(
     action: ClientToServer,
     client: &mut Client,
     response_tx: &mpsc::UnboundedSender<String>,
-) {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match action {
         ClientToServer::KeepAlive {} => {
             // Simple keep-alive response
             let response = ServerToClient::KeepAliveResponse {};
-            let _ = response_tx.send(response.to_json());
+            response_tx.send(response.to_json())?;
         }
         ClientToServer::Version { version } => {
             debug!("Client {} version: {}", client_id, version);
             let response = ServerToClient::VersionOk {};
-            let _ = response_tx.send(response.to_json());
+            response_tx.send(response.to_json())?;
         }
         ClientToServer::SetClientData {
             username: new_username,
@@ -171,14 +182,14 @@ async fn handle_client_action(
         }
         ClientToServer::CreateLobby { ruleset, game_mode } => {
             let (tx, rx) = oneshot::channel::<LobbyMessage>();
-            let _ = client.send_to_coordinator(CoordinatorMessage::CreateLobby {
+            client.send_to_coordinator(CoordinatorMessage::CreateLobby {
                 client_id,
                 ruleset,
                 game_mode,
                 client_response_tx: response_tx.clone(),
                 client_profile: client.profile.clone(),
                 request_tx: tx,
-            });
+            })?;
 
             if let Ok(lobby_message) = rx.await {
                 match lobby_message {
@@ -191,20 +202,20 @@ async fn handle_client_action(
                     }
                     _ => {
                         let error_response = ServerToClient::error("Failed to create lobby");
-                        let _ = response_tx.send(error_response.to_json());
+                        response_tx.send(error_response.to_json())?;
                     }
                 }
             }
         }
         ClientToServer::JoinLobby { code } => {
             let (tx, rx) = oneshot::channel::<LobbyMessage>();
-            let _ = client.send_to_coordinator(CoordinatorMessage::JoinLobby {
+            client.send_to_coordinator(CoordinatorMessage::JoinLobby {
                 client_id,
                 lobby_code: code,
                 client_response_tx: response_tx.clone(),
                 client_profile: client.profile.clone(),
                 request_tx: tx,
-            });
+            })?;
 
             if let Ok(lobby_message) = rx.await {
                 match lobby_message {
@@ -217,7 +228,7 @@ async fn handle_client_action(
                     }
                     _ => {
                         let error_response = ServerToClient::error("Failed to join lobby");
-                        let _ = response_tx.send(error_response.to_json());
+                        response_tx.send(error_response.to_json())?;
                     }
                 }
             }
@@ -227,12 +238,10 @@ async fn handle_client_action(
             match client.lobby_channel.as_ref() {
                 Some(_) => {
                     if let Some(coordinator_tx) = client.coordinator_channel.clone() {
-                        if let Err(e) = client.send_to_lobby(LobbyMessage::LeaveLobby {
+                        client.send_to_lobby(LobbyMessage::LeaveLobby {
                             player_id: client_id,
                             coordinator_tx,
-                        }) {
-                            error!("Failed to send LeaveLobby for client {}: {}", client_id, e);
-                        }
+                        })?;
                     } else {
                         error!(
                             "Coordinator channel missing for client {} when leaving lobby",
@@ -252,132 +261,150 @@ async fn handle_client_action(
             client.lobby_channel = None;
         }
         ClientToServer::UpdateLobbyOptions { options } => {
-            let _ = client.send_to_lobby(LobbyMessage::UpdateLobbyOptions {
+            client.send_to_lobby(LobbyMessage::UpdateLobbyOptions {
                 player_id: client_id,
                 options,
-            });
+            })?;
         }
         ClientToServer::SetReady { is_ready } => {
-            let _ = client.send_to_lobby(LobbyMessage::SetReady {
+            client.send_to_lobby(LobbyMessage::SetReady {
                 player_id: client_id,
                 is_ready,
-            });
+            })?;
         }
         ClientToServer::SetLocation { location } => {
-            let _ = client.send_to_lobby(LobbyMessage::SetLocation {
+            client.send_to_lobby(LobbyMessage::SetLocation {
                 player_id: client_id,
                 location,
-            });
+            })?;
         }
         ClientToServer::StartGame { seed, stake } => {
-            let _ = client.send_to_lobby(LobbyMessage::StartGame {
+            client.send_to_lobby(LobbyMessage::StartGame {
                 player_id: client_id,
                 seed: seed.clone(),
                 stake: stake.clone(),
-            });
+            })?;
         }
         ClientToServer::StopGame {} => {
-            let _ = client.send_to_lobby(LobbyMessage::StopGame {
+            client.send_to_lobby(LobbyMessage::StopGame {
                 player_id: client_id,
-            });
+            })?;
         }
         ClientToServer::UpdateHandsAndDiscards {
             hands_max,
             discards_max,
         } => {
-            let _ = client.send_to_lobby(LobbyMessage::UpdateHandsAndDiscards {
+            client.send_to_lobby(LobbyMessage::UpdateHandsAndDiscards {
                 player_id: client_id,
                 hands_max,
                 discards_max,
-            });
+            })?;
         }
         ClientToServer::PlayHand { score, hands_left } => {
-            let _ = client.send_to_lobby(LobbyMessage::PlayHand {
+            client.send_to_lobby(LobbyMessage::PlayHand {
                 player_id: client_id,
                 score,
                 hands_left,
-            });
+            })?;
         }
         ClientToServer::Discard {} => todo!(),
         ClientToServer::SetBossBlind { key, chips } => {
-            let _ = client.send_to_lobby(LobbyMessage::SetBossBlind {
+            client.send_to_lobby(LobbyMessage::SetBossBlind {
                 player_id: client_id,
                 key,
                 chips,
-            });
+            })?;
         }
         ClientToServer::Skip { blind } => {
-            let _ = client.send_to_lobby(LobbyMessage::Skip {
-                player_id: client_id,
-                blind
-            });
-        }
-        ClientToServer::FailRound {} => {
-            let _ = client.send_to_lobby(LobbyMessage::FailRound {
-                player_id: client_id,
-            });
-        }
-        ClientToServer::SendPlayerDeck { deck } => {
-            let _ = client.send_to_lobby(LobbyMessage::SendPlayerDeck {
-                player_id: client_id,
-                deck,
-            });
-        }
-        ClientToServer::SendPhantom { key } => {
-            let _ = client.send_to_lobby(LobbyMessage::SendPhantom {
-                player_id: client_id,
-                key,
-            });
-        }
-        ClientToServer::RemovePhantom { key } => {
-            let _ = client.send_to_lobby(LobbyMessage::RemovePhantom {
-                player_id: client_id,
-                key,
-            });
-        }
-        ClientToServer::Asteroid {} => {
-            let _ = client.send_to_lobby(LobbyMessage::Asteroid {
-                player_id: client_id,
-            });
-        }
-        ClientToServer::LetsGoGamblingNemesis {} => {
-            let _ = client.send_to_lobby(LobbyMessage::LetsGoGamblingNemesis {
-                player_id: client_id,
-            });
-        }
-        ClientToServer::EatPizza { discards } => {
-            let _ = client.send_to_lobby(LobbyMessage::EatPizza {
-                player_id: client_id,
-                discards,
-            });
-        }
-        ClientToServer::SoldJoker {} => {
-            let _ = client.send_to_lobby(LobbyMessage::SoldJoker {
-                player_id: client_id,
-            });
-        }
-        ClientToServer::SpentLastShop { amount } => {
-            let _ = client.send_to_lobby(LobbyMessage::SpentLastShop {
-                player_id: client_id,
-                amount,
-            });
-        }
-        ClientToServer::Magnet {} => {
-            let _ = client.send_to_lobby(LobbyMessage::Magnet {
-                player_id: client_id,
-            });
-        }
-        ClientToServer::MagnetResponse { key } => {
-            let _ = client.send_to_lobby(LobbyMessage::MagnetResponse {
-                player_id: client_id,
-                key,
-            });
-        }
-        ClientToServer::SetFurthestBlind { blind } => {
-            let _ = client.send_to_lobby(LobbyMessage::SetFurthestBlind {
+            client.send_to_lobby(LobbyMessage::Skip {
                 player_id: client_id,
                 blind,
-            });
+            })?;
+        }
+        ClientToServer::FailRound {} => {
+            client.send_to_lobby(LobbyMessage::FailRound {
+                player_id: client_id,
+            })?;
+        }
+        ClientToServer::SendPlayerDeck { deck } => {
+            client.send_to_lobby(LobbyMessage::SendPlayerDeck {
+                player_id: client_id,
+                deck,
+            })?;
+        }
+        ClientToServer::SendPhantom { key } => {
+            client.send_to_lobby(LobbyMessage::SendPhantom {
+                player_id: client_id,
+                key,
+            })?;
+        }
+        ClientToServer::RemovePhantom { key } => {
+            client.send_to_lobby(LobbyMessage::RemovePhantom {
+                player_id: client_id,
+                key,
+            })?;
+        }
+        ClientToServer::Asteroid {} => {
+            client.send_to_lobby(LobbyMessage::Asteroid {
+                player_id: client_id,
+            })?;
+        }
+        ClientToServer::LetsGoGamblingNemesis {} => {
+            client.send_to_lobby(LobbyMessage::LetsGoGamblingNemesis {
+                player_id: client_id,
+            })?;
+        }
+        ClientToServer::EatPizza { discards } => {
+            client.send_to_lobby(LobbyMessage::EatPizza {
+                player_id: client_id,
+                discards,
+            })?;
+        }
+        ClientToServer::SoldJoker {} => {
+            client.send_to_lobby(LobbyMessage::SoldJoker {
+                player_id: client_id,
+            })?;
+        }
+        ClientToServer::SpentLastShop { amount } => {
+            client.send_to_lobby(LobbyMessage::SpentLastShop {
+                player_id: client_id,
+                amount,
+            })?;
+        }
+        ClientToServer::Magnet {} => {
+            client.send_to_lobby(LobbyMessage::Magnet {
+                player_id: client_id,
+            })?;
+        }
+        ClientToServer::MagnetResponse { key } => {
+            client.send_to_lobby(LobbyMessage::MagnetResponse {
+                player_id: client_id,
+                key,
+            })?;
+        }
+        ClientToServer::SetFurthestBlind { blind } => {
+            client.send_to_lobby(LobbyMessage::SetFurthestBlind {
+                player_id: client_id,
+                blind,
+            })?;
+        }
+        ClientToServer::StartAnteTimer { time } => {
+            client.send_to_lobby(LobbyMessage::StartAnteTimer {
+                player_id: client_id,
+                time,
+            })?;
+        }
+        ClientToServer::PauseAnteTimer { time } => {
+            client.send_to_lobby(LobbyMessage::PauseAnteTimer {
+                player_id: client_id,
+                time,
+            })?;
+        }
+        ClientToServer::FailTimer {} => {
+            client.send_to_lobby(LobbyMessage::FailTimer {
+                player_id: client_id,
+            })?;
         }
     }
+    Ok(())
 }

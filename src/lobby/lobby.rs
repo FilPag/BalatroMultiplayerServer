@@ -7,7 +7,6 @@ use crate::{
     utils::time_based_string,
 };
 use serde::Serialize;
-use tracing_subscriber::field::debug;
 use std::collections::HashMap;
 use tracing::{debug, error};
 use uuid::Uuid;
@@ -96,12 +95,9 @@ impl Lobby {
         }
     }
 
-    pub fn set_player_ready(&mut self, player_id: Uuid, is_ready: bool) -> bool {
+    pub fn set_player_ready(&mut self, player_id: Uuid, is_ready: bool){
         if let Some(player) = self.players.get_mut(&player_id) {
             player.lobby_state.is_ready = is_ready;
-            true
-        } else {
-            false
         }
     }
 
@@ -169,10 +165,11 @@ impl Lobby {
         self.apply_round_results(&losers);
         self.broadcast_all_game_states(broadcaster);
 
-        let game_ended = self.is_someone_dead();
+        // Use unified game over check
+        let (game_ended, final_winners, final_losers) = self.check_game_over();
 
         if game_ended {
-            self.handle_game_end(broadcaster, &winners, &losers);
+            self.handle_game_end(broadcaster, &final_winners, &final_losers);
         } else {
             self.reset_scores();
             self.send_outcome_messages(broadcaster, &winners, &losers, false);
@@ -189,25 +186,16 @@ impl Lobby {
     ) -> bool {
         debug!("Player {} failed a round in lobby {}", player_id, self.code);
 
-        self.apply_life_loss(player_id);
-        self.broadcast_life_updates(broadcaster, player_id);
-
-        if self.lobby_options.gamemode == GameMode::Survival {
-            // Check if all players are dead - if so, determine winner by furthest blind
-            debug!("Checking if all players are dead in lobby {}", self.code);
-            if self.all_players_dead() {
-                debug!("All players are dead in lobby {}", self.code);
-                let (winners, losers) = self.get_survival_winners_losers();
-                self.handle_game_end(broadcaster, &winners, &losers);
-                return true;
-            }
-            return false;
+        if self.lobby_options.death_on_round_loss {
+            self.apply_life_loss(player_id);
         }
 
-        let game_ended = self.is_someone_dead();
+        self.broadcast_life_updates(broadcaster, player_id);
 
+        // Use unified game over check
+        let (game_ended, winners, losers) = self.check_game_over();
+        
         if game_ended {
-            let (winners, losers) = self.determine_game_end_results();
             self.handle_game_end(broadcaster, &winners, &losers);
         }
 
@@ -288,11 +276,7 @@ impl Lobby {
         }
     }
 
-    fn apply_life_loss(&mut self, player_id: Uuid) {
-        if !self.lobby_options.death_on_round_loss {
-            return;
-        }
-
+    pub fn apply_life_loss(&mut self, player_id: Uuid) {
         match self.lobby_options.gamemode {
             GameMode::CoopSurvival => {
                 for player in self.players.values_mut() {
@@ -307,7 +291,7 @@ impl Lobby {
         }
     }
 
-    fn handle_game_end(&self, broadcaster: &LobbyBroadcaster, winners: &[Uuid], losers: &[Uuid]) {
+    pub fn handle_game_end(&self, broadcaster: &LobbyBroadcaster, winners: &[Uuid], losers: &[Uuid]) {
         debug!("Game Over in lobby {}, ending game", self.code);
         self.send_outcome_messages(broadcaster, winners, losers, true);
     }
@@ -400,12 +384,12 @@ impl Lobby {
 
     // Survival mode helper methods
     fn all_players_dead(&self) -> bool {
-            let all_dead = self.players.values().all(|p| p.game_state.lives == 0);
-            for (id, player) in &self.players {
-                debug!("Player {} has {} lives", id, player.game_state.lives);
-            }
-            return all_dead;
+        let all_dead = self.players.values().all(|p| p.game_state.lives == 0);
+        for (id, player) in &self.players {
+            debug!("Player {} has {} lives", id, player.game_state.lives);
         }
+        return all_dead;
+    }
 
     fn all_other_players_dead(&self, except_player_id: Uuid) -> bool {
         self.players
@@ -436,6 +420,39 @@ impl Lobby {
             }
         }
         (winners, losers)
+    }
+
+    /// Unified game over check for all game modes
+    /// Returns (is_game_over, winners, losers)
+    pub fn check_game_over(&self) -> (bool, Vec<Uuid>, Vec<Uuid>) {
+        match self.lobby_options.gamemode {
+            GameMode::Survival => {
+                // Game over if all players are dead
+                if self.all_players_dead() {
+                    let (winners, losers) = self.get_survival_winners_losers();
+                    (true, winners, losers)
+                } else {
+                    (false, Vec::new(), Vec::new())
+                }
+            }
+            GameMode::CoopSurvival => {
+                // Game over if any player is dead (everyone loses together)
+                if self.is_someone_dead() {
+                    (true, Vec::new(), self.players.keys().cloned().collect())
+                } else {
+                    (false, Vec::new(), Vec::new())
+                }
+            }
+            _ => {
+                // Standard PvP modes - game over if someone is dead
+                if self.is_someone_dead() {
+                    let (winners, losers) = self.determine_game_end_results();
+                    (true, winners, losers)
+                } else {
+                    (false, Vec::new(), Vec::new())
+                }
+            }
+        }
     }
 
     pub fn check_survival_furthest_blind_win(
