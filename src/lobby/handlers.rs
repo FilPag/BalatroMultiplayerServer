@@ -69,7 +69,7 @@ impl LobbyHandlers {
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
         player_id: Uuid,
-        blind: u32
+        blind: u32,
     ) {
         Self::update_player_and_broadcast(lobby, broadcaster, player_id, false, |player| {
             player.game_state.skips += 1;
@@ -91,38 +91,33 @@ impl LobbyHandlers {
     }
 
     // Multiplayer joker handlers - these broadcast to other players
-    pub fn handle_send_phantom(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-        key: String,
-    ) {
+    pub fn handle_send_phantom(broadcaster: &LobbyBroadcaster, player_id: Uuid, key: String) {
         debug!("Player {} sending phantom joker: {}", player_id, key);
-        broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::SendPhantom { key });
+        broadcaster.broadcast_except(
+            player_id,
+            crate::actions::ServerToClient::SendPhantom { key },
+        );
     }
 
-    pub fn handle_remove_phantom(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-        key: String,
-    ) {
+    pub fn handle_remove_phantom(broadcaster: &LobbyBroadcaster, player_id: Uuid, key: String) {
         debug!("Player {} removing phantom joker: {}", player_id, key);
-        broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::RemovePhantom { key });
+        broadcaster.broadcast_except(
+            player_id,
+            crate::actions::ServerToClient::RemovePhantom { key },
+        );
     }
 
-    pub fn handle_asteroid(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-    ) {
+    pub fn handle_asteroid(broadcaster: &LobbyBroadcaster, player_id: Uuid) {
         debug!("Player {} triggered asteroid", player_id);
         broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::Asteroid {});
     }
 
-    pub fn handle_lets_go_gambling_nemesis(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-    ) {
+    pub fn handle_lets_go_gambling_nemesis(broadcaster: &LobbyBroadcaster, player_id: Uuid) {
         debug!("Player {} triggered lets go gambling nemesis", player_id);
-        broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::LetsGoGamblingNemesis {});
+        broadcaster.broadcast_except(
+            player_id,
+            crate::actions::ServerToClient::LetsGoGamblingNemesis {},
+        );
     }
 
     pub fn set_furthest_blind(
@@ -131,11 +126,15 @@ impl LobbyHandlers {
         player_id: Uuid,
         blind: u32,
     ) {
-        debug!("Player {} setting furthest blind to {}", player_id, blind.to_string());
+        debug!(
+            "Player {} setting furthest blind to {}",
+            player_id,
+            blind.to_string()
+        );
         if let Some(player) = lobby.get_player_mut(player_id) {
             player.game_state.furthest_blind = blind;
             lobby.broadcast_game_state_update(broadcaster, player_id, false);
-            
+
             // Check for survival mode game end condition
             if lobby.lobby_options.gamemode == crate::game_mode::GameMode::Survival {
                 let game_ended = lobby.check_survival_furthest_blind_win(broadcaster, player_id);
@@ -146,47 +145,49 @@ impl LobbyHandlers {
         }
     }
 
-    pub fn handle_eat_pizza(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-        discards: u8,
-    ) {
-        debug!("Player {} eating pizza for {} discards", player_id, discards);
-        broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::EatPizza { discards });
+    pub fn handle_eat_pizza(broadcaster: &LobbyBroadcaster, player_id: Uuid, discards: u8) {
+        debug!(
+            "Player {} eating pizza for {} discards",
+            player_id, discards
+        );
+        broadcaster.broadcast_except(
+            player_id,
+            crate::actions::ServerToClient::EatPizza { discards },
+        );
     }
 
-    pub fn handle_sold_joker(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-    ) {
+    pub fn handle_sold_joker(broadcaster: &LobbyBroadcaster, player_id: Uuid) {
         debug!("Player {} sold a joker", player_id);
         broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::SoldJoker {});
     }
 
-    pub fn handle_spent_last_shop(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-        amount: u32,
-    ) {
+    pub fn handle_spent_last_shop(broadcaster: &LobbyBroadcaster, player_id: Uuid, amount: u32) {
         //TODO fix the vector handling here
         debug!("Player {} spent {} in shop", player_id, amount);
         broadcaster.broadcast(crate::actions::ServerToClient::SpentLastShop { player_id, amount });
     }
 
-    pub fn handle_magnet(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-    ) {
+    pub fn handle_magnet(broadcaster: &LobbyBroadcaster, player_id: Uuid) {
         debug!("Player {} triggered magnet", player_id);
         broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::Magnet {});
     }
 
-    pub fn handle_magnet_response(
-        broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
-        key: String,
-    ) {
+    pub fn handle_magnet_response(broadcaster: &LobbyBroadcaster, player_id: Uuid, key: String) {
         debug!("Player {} responding to magnet with: {}", player_id, key);
-        broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::MagnetResponse { key });
+        broadcaster.broadcast_except(
+            player_id,
+            crate::actions::ServerToClient::MagnetResponse { key },
+        );
+    }
+
+    pub fn handle_fail_timer(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: Uuid) {
+        debug!("Player {} failed timer", player_id);
+        lobby.apply_life_loss(player_id);
+        lobby.broadcast_life_updates(broadcaster, player_id);
+        let (game_over, winners, losers) = lobby.check_game_over();
+        if game_over {
+            lobby.handle_game_end(broadcaster, &winners, &losers);
+        }
+        broadcaster.broadcast(crate::actions::ServerToClient::PauseAnteTimer { time: (lobby.lobby_options.timer_base_seconds) });
     }
 }

@@ -29,10 +29,10 @@ pub struct LobbyOptions {
     pub normal_bosses: bool,
     pub pvp_start_round: i32,
     pub ruleset: String,
-    pub showdown_starting_antes: i32,
-    pub stake: i32,
+    pub showdown_starting_antes: u32,
+    pub stake: u32,
     pub starting_lives: u8,
-    pub timer_base_seconds: i32,
+    pub timer_base_seconds: u32,
     pub timer_increment_seconds: i32,
 }
 

@@ -64,9 +64,7 @@ pub enum ClientToServer {
     SetBossBlind { key: String, chips: TalismanNumber },
 
     #[serde(rename = "skip")]
-    Skip {
-        blind: u32,
-    },
+    Skip { blind: u32 },
 
     #[serde(rename = "setLocation")]
     SetLocation { location: String },
@@ -98,6 +96,15 @@ pub enum ClientToServer {
 
     #[serde(rename = "soldJoker")]
     SoldJoker {},
+
+    #[serde(rename = "startAnteTimer")]
+    StartAnteTimer { time: u32 },
+
+    #[serde(rename = "pauseAnteTimer")]
+    PauseAnteTimer { time: u32 },
+
+    #[serde(rename = "failTimer")]
+    FailTimer {},
 
     #[serde(rename = "spentLastShop")]
     SpentLastShop { amount: u32 },
@@ -196,6 +203,11 @@ pub enum ServerToClient {
 
     #[serde(rename = "spentLastShop")]
     SpentLastShop { player_id: Uuid, amount: u32 },
+
+    #[serde(rename = "startAnteTimer")]
+    StartAnteTimer { time: u32 },
+    #[serde(rename = "pauseAnteTimer")]
+    PauseAnteTimer { time: u32 },
 
     #[serde(rename = "magnet")]
     Magnet {},

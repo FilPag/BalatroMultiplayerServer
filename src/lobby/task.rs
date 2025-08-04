@@ -6,6 +6,7 @@ use crate::{
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info};
+use tracing_subscriber::field::debug;
 use uuid::Uuid;
 
 /// Individual lobby task - handles 2-4 players
@@ -173,15 +174,14 @@ pub async fn lobby_task(
                 player_id,
                 is_ready,
             } => {
-                if lobby.set_player_ready(player_id, is_ready) {
-                    if lobby.started {
-                        let all_ready = lobby.players().values().all(|p| p.lobby_state.is_ready);
-                        if all_ready {
-                            lobby.start_online_blind(&broadcaster);
-                        }
-                    } else {
-                        lobby.broadcast_ready_states_except(&broadcaster, player_id);
+                lobby.set_player_ready(player_id, is_ready);
+                if lobby.started {
+                    let all_ready = lobby.players().values().all(|p| p.lobby_state.is_ready);
+                    if all_ready {
+                        lobby.start_online_blind(&broadcaster);
                     }
+                } else {
+                    lobby.broadcast_ready_states_except(&broadcaster, player_id);
                 }
             }
             LobbyMessage::SetBossBlind {
@@ -233,10 +233,28 @@ pub async fn lobby_task(
                 LobbyHandlers::handle_magnet_response(&broadcaster, player_id, key);
             }
             LobbyMessage::LobbyJoinData { .. } => {
+                //This won't be handled here, it's for the coordinator to handle
                 tracing::warn!("LobbyJoinData handler not implemented");
             }
             LobbyMessage::SetFurthestBlind { player_id, blind } => {
                 LobbyHandlers::set_furthest_blind(&mut lobby, &broadcaster, player_id, blind);
+            }
+            LobbyMessage::StartAnteTimer { player_id, time } => {
+                debug!(
+                    "Starting ante timer in lobby {} with time: {}",
+                    lobby_code, time
+                );
+                broadcaster.broadcast_except(player_id, ServerToClient::StartAnteTimer { time });
+            }
+            LobbyMessage::PauseAnteTimer { player_id, time } => {
+                debug!(
+                    "Pausing ante timer in lobby {} with time: {}",
+                    lobby_code, time
+                );
+                broadcaster.broadcast_except(player_id, ServerToClient::PauseAnteTimer { time });
+            }
+            LobbyMessage::FailTimer { player_id } => {
+                LobbyHandlers::handle_fail_timer(&mut lobby, &broadcaster, player_id);
             }
         }
     }
