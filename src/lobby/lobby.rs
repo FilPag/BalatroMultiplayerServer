@@ -10,6 +10,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tracing::{debug, error};
 use uuid::Uuid;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Lobby {
@@ -18,16 +20,20 @@ pub struct Lobby {
     pub boss_chips: TalismanNumber,
     pub lobby_options: LobbyOptions,
     players: HashMap<Uuid, ClientLobbyEntry>,
+    max_players: u8
 }
 
 impl Lobby {
-    pub fn new(code: String, game_mode: GameMode) -> Self {
+    pub fn new(code: String, ruleset: String, game_mode: GameMode) -> Self {
+        let mut new_gamemode = game_mode.get_default_options();
+        new_gamemode.ruleset = ruleset;
         Self {
             code,
             started: false,
             boss_chips: TalismanNumber::Regular(0.0),
-            lobby_options: game_mode.get_default_options(),
+            lobby_options: new_gamemode,
             players: HashMap::new(),
+            max_players: game_mode.get_max_players(),
         }
     }
 
@@ -42,6 +48,27 @@ impl Lobby {
 
     pub fn players(&self) -> &HashMap<Uuid, ClientLobbyEntry> {
         &self.players
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.players.len() >= self.max_players as usize
+    }
+
+    pub fn randomize_teams(&mut self, team_size: u8) {
+
+        let mut rng = thread_rng();
+        let mut player_ids: Vec<Uuid> = self.players.keys().cloned().collect();
+        player_ids.shuffle(&mut rng);
+
+        let mut team = 1;
+        for (i, player_id) in player_ids.iter().enumerate() {
+            if i > 0 && i % team_size as usize == 0 {
+                team += 1;
+            }
+            if let Some(player) = self.players.get_mut(player_id) {
+                player.game_state.team = team;
+            }
+        }
     }
 
     // DRY: Extract common player operations
@@ -95,7 +122,7 @@ impl Lobby {
         }
     }
 
-    pub fn set_player_ready(&mut self, player_id: Uuid, is_ready: bool){
+    pub fn set_player_ready(&mut self, player_id: Uuid, is_ready: bool) {
         if let Some(player) = self.players.get_mut(&player_id) {
             player.lobby_state.is_ready = is_ready;
         }
@@ -115,11 +142,10 @@ impl Lobby {
         }
     }
 
+    //TODO for some reason the first seed it not random
     pub fn start_game(&mut self) {
         self.started = true;
-        if (!self.lobby_options.different_seeds)
-            && self.lobby_options.custom_seed == String::from("random")
-        {
+        if !self.lobby_options.different_seeds && self.lobby_options.custom_seed == String::from("random") {
             self.lobby_options.custom_seed = time_based_string(8);
             debug!(
                 "Generating time-based seed for lobby {} seed: {}",
@@ -194,7 +220,7 @@ impl Lobby {
 
         // Use unified game over check
         let (game_ended, winners, losers) = self.check_game_over();
-        
+
         if game_ended {
             self.handle_game_end(broadcaster, &winners, &losers);
         }
@@ -291,7 +317,12 @@ impl Lobby {
         }
     }
 
-    pub fn handle_game_end(&self, broadcaster: &LobbyBroadcaster, winners: &[Uuid], losers: &[Uuid]) {
+    pub fn handle_game_end(
+        &self,
+        broadcaster: &LobbyBroadcaster,
+        winners: &[Uuid],
+        losers: &[Uuid],
+    ) {
         debug!("Game Over in lobby {}, ending game", self.code);
         self.send_outcome_messages(broadcaster, winners, losers, true);
     }

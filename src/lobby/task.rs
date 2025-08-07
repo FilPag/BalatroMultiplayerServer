@@ -6,7 +6,6 @@ use crate::{
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info};
-use tracing_subscriber::field::debug;
 use uuid::Uuid;
 
 /// Individual lobby task - handles 2-4 players
@@ -16,7 +15,7 @@ pub async fn lobby_task(
     ruleset: String,
     game_mode: GameMode,
 ) {
-    let mut lobby = Lobby::new(lobby_code.clone(), game_mode);
+    let mut lobby = Lobby::new(lobby_code.clone(), ruleset.clone() , game_mode);
     let mut broadcaster = LobbyBroadcaster::new();
     let mut host_id = Uuid::nil();
 
@@ -77,7 +76,13 @@ pub async fn lobby_task(
                         }
                         .to_json(),
                     );
-                    continue;
+                } else if lobby.is_full() {
+                    let _ = client_response_tx.send(
+                        ServerToClient::Error {
+                            message: String::from("Lobby is full"),
+                        }
+                        .to_json(),
+                    );
                 }
 
                 broadcaster.add_player(player_id, client_response_tx.clone());
@@ -255,6 +260,10 @@ pub async fn lobby_task(
             }
             LobbyMessage::FailTimer { player_id } => {
                 LobbyHandlers::handle_fail_timer(&mut lobby, &broadcaster, player_id);
+            }
+            LobbyMessage::SendPlayerJokers { player_id, jokers } => {
+                debug!("Sending jokers for player {}: {}", player_id, jokers);
+                broadcaster.broadcast_except(player_id, ServerToClient::ReceivePlayerJokers { player_id, jokers });
             }
         }
     }

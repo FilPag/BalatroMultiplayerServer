@@ -405,6 +405,12 @@ async fn handle_client_action(
                 player_id: client_id,
             })?;
         }
+        ClientToServer::SendPlayerJokers { jokers } => {
+            client.send_to_lobby(LobbyMessage::SendPlayerJokers {
+                player_id: client_id,
+                jokers,
+            })?;
+        }
     }
     Ok(())
 }
