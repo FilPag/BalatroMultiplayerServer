@@ -9,7 +9,6 @@ use crate::{
 use serde::Serialize;
 use std::collections::HashMap;
 use tracing::{debug, error};
-use uuid::Uuid;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
@@ -19,7 +18,7 @@ pub struct Lobby {
     pub started: bool,
     pub boss_chips: TalismanNumber,
     pub lobby_options: LobbyOptions,
-    players: HashMap<Uuid, ClientLobbyEntry>,
+    players: HashMap<String, ClientLobbyEntry>,
     max_players: u8
 }
 
@@ -38,15 +37,15 @@ impl Lobby {
     }
 
     // KISS: Simple accessors
-    pub fn get_player(&self, player_id: Uuid) -> Option<&ClientLobbyEntry> {
-        self.players.get(&player_id)
+    pub fn get_player(&self, player_id: &str) -> Option<&ClientLobbyEntry> {
+        self.players.get(player_id)
     }
 
-    pub fn get_player_mut(&mut self, player_id: Uuid) -> Option<&mut ClientLobbyEntry> {
-        self.players.get_mut(&player_id)
+    pub fn get_player_mut(&mut self, player_id: &str) -> Option<&mut ClientLobbyEntry> {
+        self.players.get_mut(player_id)
     }
 
-    pub fn players(&self) -> &HashMap<Uuid, ClientLobbyEntry> {
+    pub fn players(&self) -> &HashMap<String, ClientLobbyEntry> {
         &self.players
     }
 
@@ -57,7 +56,7 @@ impl Lobby {
     pub fn randomize_teams(&mut self, team_size: u8) {
 
         let mut rng = thread_rng();
-        let mut player_ids: Vec<Uuid> = self.players.keys().cloned().collect();
+        let mut player_ids: Vec<String> = self.players.keys().cloned().collect();
         player_ids.shuffle(&mut rng);
 
         let mut team = 1;
@@ -74,7 +73,7 @@ impl Lobby {
     // DRY: Extract common player operations
     pub fn add_player(
         &mut self,
-        player_id: Uuid,
+        player_id: String,
         client_profile: ClientProfile,
     ) -> ClientLobbyEntry {
         let is_host = self.players.is_empty();
@@ -88,23 +87,23 @@ impl Lobby {
         entry
     }
 
-    pub fn remove_player(&mut self, player_id: Uuid) -> Option<ClientLobbyEntry> {
-        self.players.remove(&player_id)
+    pub fn remove_player(&mut self, player_id: &str) -> Option<ClientLobbyEntry> {
+        self.players.remove(player_id)
     }
 
-    pub fn promote_new_host(&mut self) -> Option<Uuid> {
-        if let Some((&new_host_id, new_host_entry)) = self.players.iter_mut().next() {
+    pub fn promote_new_host(&mut self) -> Option<String> {
+        if let Some((new_host_id, new_host_entry)) = self.players.iter_mut().next() {
             new_host_entry.lobby_state.is_host = true;
             new_host_entry.lobby_state.is_ready = true;
-            Some(new_host_id)
+            Some(new_host_id.clone())
         } else {
             None
         }
     }
 
-    pub fn is_player_host(&self, player_id: Uuid) -> bool {
+    pub fn is_player_host(&self, player_id: &str) -> bool {
         self.players
-            .get(&player_id)
+            .get(player_id)
             .map(|p| p.lobby_state.is_host)
             .unwrap_or(false)
     }
@@ -122,16 +121,16 @@ impl Lobby {
         }
     }
 
-    pub fn set_player_ready(&mut self, player_id: Uuid, is_ready: bool) {
-        if let Some(player) = self.players.get_mut(&player_id) {
+    pub fn set_player_ready(&mut self, player_id: &str, is_ready: bool) {
+        if let Some(player) = self.players.get_mut(player_id) {
             player.lobby_state.is_ready = is_ready;
         }
     }
 
-    pub fn collect_ready_states(&self) -> HashMap<Uuid, bool> {
+    pub fn collect_ready_states(&self) -> HashMap<String, bool> {
         self.players
             .iter()
-            .map(|(&id, entry)| (id, entry.lobby_state.is_ready))
+            .map(|(id, entry)| (id.clone(), entry.lobby_state.is_ready))
             .collect()
     }
 
@@ -207,7 +206,7 @@ impl Lobby {
     //TODO should work with survival where players wait for other to fail or reach the same or a latter round
     pub fn handle_player_fail_round(
         &mut self,
-        player_id: Uuid,
+        player_id: &str,
         broadcaster: &LobbyBroadcaster,
     ) -> bool {
         debug!("Player {} failed a round in lobby {}", player_id, self.code);
@@ -228,7 +227,7 @@ impl Lobby {
         game_ended
     }
 
-    fn check_round_victory(&self) -> (Vec<Uuid>, Vec<Uuid>) {
+    fn check_round_victory(&self) -> (Vec<String>, Vec<String>) {
         match self.lobby_options.gamemode {
             GameMode::CoopSurvival => {
                 if self.get_total_score() > self.boss_chips {
@@ -256,17 +255,17 @@ impl Lobby {
                     .max()
                     .unwrap(); // Safe because we checked players.len() >= 2
 
-                let winners: Vec<Uuid> = self
+                let winners: Vec<String> = self
                     .players
                     .iter()
                     .filter(|(_, p)| p.game_state.score == *top_score)
-                    .map(|(id, _)| *id)
+                    .map(|(id, _)| id.clone())
                     .collect();
-                let losers: Vec<Uuid> = self
+                let losers: Vec<String> = self
                     .players
                     .iter()
                     .filter(|(_, p)| p.game_state.score != *top_score)
-                    .map(|(id, _)| *id)
+                    .map(|(id, _)| id.clone())
                     .collect();
 
                 (winners, losers)
@@ -274,18 +273,18 @@ impl Lobby {
         }
     }
 
-    fn determine_game_end_results(&self) -> (Vec<Uuid>, Vec<Uuid>) {
+    fn determine_game_end_results(&self) -> (Vec<String>, Vec<String>) {
         match self.lobby_options.gamemode {
             GameMode::CoopSurvival => (Vec::new(), self.players.keys().cloned().collect()),
             _ => {
                 let mut winners = Vec::new();
                 let mut losers = Vec::new();
 
-                for (&player_id, player) in &self.players {
+                for (player_id, player) in &self.players {
                     if player.game_state.lives > 0 {
-                        winners.push(player_id);
+                        winners.push(player_id.clone());
                     } else {
-                        losers.push(player_id);
+                        losers.push(player_id.clone());
                     }
                 }
 
@@ -294,15 +293,15 @@ impl Lobby {
         }
     }
 
-    fn apply_round_results(&mut self, losers: &[Uuid]) {
-        for &loser in losers {
-            if let Some(player) = self.players.get_mut(&loser) {
+    fn apply_round_results(&mut self, losers: &[String]) {
+        for loser in losers {
+            if let Some(player) = self.players.get_mut(loser) {
                 player.game_state.lives = player.game_state.lives.saturating_sub(1);
             }
         }
     }
 
-    pub fn apply_life_loss(&mut self, player_id: Uuid) {
+    pub fn apply_life_loss(&mut self, player_id: &str) {
         match self.lobby_options.gamemode {
             GameMode::CoopSurvival => {
                 for player in self.players.values_mut() {
@@ -310,7 +309,7 @@ impl Lobby {
                 }
             }
             _ => {
-                if let Some(player) = self.players.get_mut(&player_id) {
+                if let Some(player) = self.players.get_mut(player_id) {
                     player.game_state.lives = player.game_state.lives.saturating_sub(1);
                 }
             }
@@ -320,8 +319,8 @@ impl Lobby {
     pub fn handle_game_end(
         &self,
         broadcaster: &LobbyBroadcaster,
-        winners: &[Uuid],
-        losers: &[Uuid],
+        winners: &[String],
+        losers: &[String],
     ) {
         debug!("Game Over in lobby {}, ending game", self.code);
         self.send_outcome_messages(broadcaster, winners, losers, true);
@@ -330,11 +329,11 @@ impl Lobby {
     fn send_outcome_messages(
         &self,
         broadcaster: &LobbyBroadcaster,
-        winners: &[Uuid],
-        losers: &[Uuid],
+        winners: &[String],
+        losers: &[String],
         is_game_end: bool,
     ) {
-        for &player_id in winners {
+        for player_id in winners {
             let message = if is_game_end {
                 debug!("Player {} won the game in lobby {}", player_id, self.code);
                 ServerToClient::WinGame {}
@@ -345,7 +344,7 @@ impl Lobby {
             broadcaster.send_to(player_id, message);
         }
 
-        for &player_id in losers {
+        for player_id in losers {
             let message = if is_game_end {
                 debug!("Player {} lost the game in lobby {}", player_id, self.code);
                 ServerToClient::LoseGame {}
@@ -360,11 +359,11 @@ impl Lobby {
     // Broadcasting helpers
     pub fn broadcast_all_game_states(&self, broadcaster: &LobbyBroadcaster) {
         for player in self.players.values() {
-            self.broadcast_game_state_update(broadcaster, player.profile.id, false);
+            self.broadcast_game_state_update(broadcaster, &player.profile.id, false);
         }
     }
 
-    pub fn broadcast_life_updates(&self, broadcaster: &LobbyBroadcaster, player_id: Uuid) {
+    pub fn broadcast_life_updates(&self, broadcaster: &LobbyBroadcaster, player_id: &str) {
         if self.lobby_options.gamemode == GameMode::CoopSurvival {
             self.broadcast_all_game_states(broadcaster);
         } else {
@@ -375,12 +374,12 @@ impl Lobby {
     pub fn broadcast_game_state_update(
         &self,
         broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
+        player_id: &str,
         exclude_player: bool,
     ) {
-        if let Some(player) = self.players.get(&player_id) {
+        if let Some(player) = self.players.get(player_id) {
             let update = ServerToClient::GameStateUpdate {
-                player_id,
+                player_id: player_id.to_string(),
                 game_state: player.game_state.clone(),
             };
 
@@ -393,16 +392,24 @@ impl Lobby {
     }
 
     pub fn broadcast_ready_states(&self, broadcaster: &LobbyBroadcaster) {
-        let ready_states = self.collect_ready_states();
+        let ready_states = self
+            .collect_ready_states()
+            .into_iter()
+            .map(|(id, ready)| (id, ready))
+            .collect::<HashMap<String, bool>>();
         broadcaster.broadcast(ServerToClient::LobbyReady { ready_states });
     }
 
     pub fn broadcast_ready_states_except(
         &self,
         broadcaster: &LobbyBroadcaster,
-        except_player: Uuid,
+        except_player: &str,
     ) {
-        let ready_states = self.collect_ready_states();
+        let ready_states = self
+            .collect_ready_states()
+            .into_iter()
+            .map(|(id, ready)| (id, ready))
+            .collect::<HashMap<String, bool>>();
         broadcaster.broadcast_except(except_player, ServerToClient::LobbyReady { ready_states });
     }
 
@@ -422,10 +429,10 @@ impl Lobby {
         return all_dead;
     }
 
-    fn all_other_players_dead(&self, except_player_id: Uuid) -> bool {
+    fn all_other_players_dead(&self, except_player_id: &str) -> bool {
         self.players
             .iter()
-            .filter(|(id, _)| **id != except_player_id)
+            .filter(|(id, _)| id.as_str() != except_player_id)
             .all(|(_, p)| p.game_state.lives == 0)
     }
 
@@ -437,17 +444,17 @@ impl Lobby {
             .unwrap_or(0)
     }
 
-    fn get_survival_winners_losers(&self) -> (Vec<Uuid>, Vec<Uuid>) {
+    fn get_survival_winners_losers(&self) -> (Vec<String>, Vec<String>) {
         let max_furthest_blind = self.get_max_furthest_blind();
 
         let mut winners = Vec::new();
         let mut losers = Vec::new();
 
-        for (&player_id, player) in &self.players {
+        for (player_id, player) in &self.players {
             if player.game_state.furthest_blind == max_furthest_blind {
-                winners.push(player_id);
+                winners.push(player_id.clone());
             } else {
-                losers.push(player_id);
+                losers.push(player_id.clone());
             }
         }
         (winners, losers)
@@ -455,7 +462,7 @@ impl Lobby {
 
     /// Unified game over check for all game modes
     /// Returns (is_game_over, winners, losers)
-    pub fn check_game_over(&self) -> (bool, Vec<Uuid>, Vec<Uuid>) {
+    pub fn check_game_over(&self) -> (bool, Vec<String>, Vec<String>) {
         match self.lobby_options.gamemode {
             GameMode::Survival => {
                 // Game over if all players are dead
@@ -489,11 +496,11 @@ impl Lobby {
     pub fn check_survival_furthest_blind_win(
         &mut self,
         broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
+        player_id: &str,
     ) -> bool {
         // Only check if all other players are dead and this player has the max furthest blind
         if self.all_other_players_dead(player_id) {
-            if let Some(player) = self.players.get(&player_id) {
+            if let Some(player) = self.players.get(player_id) {
                 if player.game_state.furthest_blind == self.get_max_furthest_blind() {
                     let (winners, losers) = self.get_survival_winners_losers();
                     self.handle_game_end(broadcaster, &winners, &losers);

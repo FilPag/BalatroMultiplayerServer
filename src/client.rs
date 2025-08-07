@@ -2,7 +2,7 @@ use crate::actions::{ClientToServer, ServerToClient};
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info};
@@ -11,7 +11,7 @@ use uuid::Uuid;
 // Core client identity and connection info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientProfile {
-    pub id: Uuid,
+    pub id: String,
     pub username: String,
     pub colour: u8, // 0-255 instead of string
     pub mod_hash: String,
@@ -31,7 +31,7 @@ impl Client {
             lobby_channel: None,
             coordinator_channel: coordinator_channel,
             profile: ClientProfile {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().to_string(),
                 username: "Guest".to_string(),
                 colour: 0,
                 mod_hash: "".to_string(),
@@ -68,16 +68,17 @@ pub async fn handle_client(
     addr: SocketAddr,
     coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage>,
 ) {
-    // Create channels for this client
-    let (writer_tx, writer_rx) = mpsc::unbounded_channel::<String>();
+        // Create channels for this client - use Vec<u8> for MessagePack compatibility
+    let (writer_tx, writer_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
     let mut client: Client = Client::new(Some(coordinator_tx.clone()));
+    let client_id = client.profile.id.clone();
 
-    info!("Client {} connected from {}", client.profile.id, addr);
+    info!("Client {} connected from {}", client_id, addr);
 
     // Send initial handshake
-    let connected_response = ServerToClient::connected(client.profile.id);
-    let _ = writer_tx.send(connected_response.to_json());
+    let connected_response = ServerToClient::connected(client_id.clone());
+    let _ = writer_tx.send(connected_response.to_msgpack());
 
     // Spawn task to handle writing to the client socket
     let write_task = tokio::spawn(handle_client_writer(socket_writer, writer_rx));
@@ -85,41 +86,42 @@ pub async fn handle_client(
     // Track client state
 
     // Read from client
-    let mut reader = tokio::io::BufReader::new(socket_reader);
-    let mut line = String::new();
+    let mut reader = socket_reader;
 
     loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => {
-                info!("Client {} disconnected", client.profile.id);
-                break;
-            }
+        // Read 4-byte length header
+        let mut length_bytes = [0u8; 4];
+        match reader.read_exact(&mut length_bytes).await {
             Ok(_) => {
-                // Parse action
-                match serde_json::from_str::<ClientToServer>(&line) {
-                    Ok(action) => {
-                        if let Err(e) =
-                            handle_client_action(client.profile.id, action, &mut client, &writer_tx)
-                                .await
-                        {
-                            error!(
-                                "Error handling action for client {}: {}",
-                                client.profile.id, e
-                            );
-                            // Optionally send error response to client
-                            let error_response =
-                                ServerToClient::error(&format!("Action failed: {}", e));
-                            let _ = writer_tx.send(error_response.to_json());
+                let length = u32::from_be_bytes(length_bytes) as usize;
+                
+                // Read MessagePack data
+                let mut msgpack_data = vec![0u8; length];
+                debug!("Reading {} bytes from client {}", length, client_id);
+                match reader.read_exact(&mut msgpack_data).await {
+                    Ok(_) => {
+                        // Parse MessagePack
+                        match rmp_serde::from_slice::<ClientToServer>(&msgpack_data) {
+                            Ok(action) => {
+                                if let Err(e) = handle_client_action(client_id.clone(), action, &mut client, &writer_tx).await {
+                                    error!("Error handling action for client {}: {}", client_id, e);
+                                    let error_response = ServerToClient::error(&format!("Action failed: {}", e));
+                                    let _ = writer_tx.send(error_response.to_msgpack());
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to parse MessagePack from {}: {}", addr, e);
+                            }
                         }
                     }
                     Err(e) => {
-                        error!("Failed to parse action from {}: {}", addr, e);
+                        error!("Failed to read MessagePack data from {}: {}", addr, e);
+                        break;
                     }
                 }
             }
             Err(e) => {
-                error!("Client {} read error: {}", addr, e);
+                info!("Client {} disconnected: {}", client_id, e);
                 break;
             }
         }
@@ -127,22 +129,29 @@ pub async fn handle_client(
 
     // Cleanup on disconnect
     let _ = coordinator_tx.send(CoordinatorMessage::ClientDisconnected {
-        client_id: client.profile.id,
+        client_id: client_id.clone(),
         coordinator_tx: coordinator_tx.clone(),
     });
 
     // Cancel background tasks
     write_task.abort();
 
-    debug!("Client {} cleanup complete", client.profile.id);
+    debug!("Client cleanup complete");
 }
 
 /// Handle writing messages to the client socket
-async fn handle_client_writer(mut writer: OwnedWriteHalf, mut rx: mpsc::UnboundedReceiver<String>) {
+async fn handle_client_writer(mut writer: OwnedWriteHalf, mut rx: mpsc::UnboundedReceiver<Vec<u8>>) {
     while let Some(message) = rx.recv().await {
-        let message_with_newline = format!("{}\n", message);
-        if let Err(e) = writer.write_all(message_with_newline.as_bytes()).await {
-            error!("Failed to write to client: {}", e);
+        // Send 4-byte length header + MessagePack data
+        let length = message.len() as u32;
+        let length_bytes = length.to_be_bytes();
+        
+        if let Err(e) = writer.write_all(&length_bytes).await {
+            error!("Failed to write length header: {}", e);
+            break;
+        }
+        if let Err(e) = writer.write_all(&message).await {
+            error!("Failed to write MessagePack data: {}", e);
             break;
         }
     }
@@ -150,21 +159,21 @@ async fn handle_client_writer(mut writer: OwnedWriteHalf, mut rx: mpsc::Unbounde
 
 /// Handle individual client actions using message passing
 async fn handle_client_action(
-    client_id: Uuid,
+    client_id: String,
     action: ClientToServer,
     client: &mut Client,
-    response_tx: &mpsc::UnboundedSender<String>,
+    response_tx: &mpsc::UnboundedSender<Vec<u8>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match action {
         ClientToServer::KeepAlive {} => {
             // Simple keep-alive response
             let response = ServerToClient::KeepAliveResponse {};
-            response_tx.send(response.to_json())?;
+            response_tx.send(response.to_msgpack())?;
         }
         ClientToServer::Version { version } => {
             debug!("Client {} version: {}", client_id, version);
             let response = ServerToClient::VersionOk {};
-            response_tx.send(response.to_json())?;
+            response_tx.send(response.to_msgpack())?;
         }
         ClientToServer::SetClientData {
             username: new_username,
@@ -202,7 +211,7 @@ async fn handle_client_action(
                     }
                     _ => {
                         let error_response = ServerToClient::error("Failed to create lobby");
-                        response_tx.send(error_response.to_json())?;
+                        response_tx.send(error_response.to_msgpack())?;
                     }
                 }
             }
@@ -228,7 +237,7 @@ async fn handle_client_action(
                     }
                     _ => {
                         let error_response = ServerToClient::error("Failed to join lobby");
-                        response_tx.send(error_response.to_json())?;
+                        response_tx.send(error_response.to_msgpack())?;
                     }
                 }
             }
