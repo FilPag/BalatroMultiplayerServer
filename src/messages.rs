@@ -100,6 +100,11 @@ pub enum LobbyMessage {
         blind: u32,
     },
 
+    SendPlayerJokers {
+        player_id: Uuid,
+        jokers: String,
+    },
+
     SendPlayerDeck {
         player_id: Uuid,
         deck: String,

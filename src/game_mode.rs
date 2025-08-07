@@ -61,6 +61,9 @@ impl GameMode {
     pub fn get_default_options(&self) -> LobbyOptions {
         self.get_data().default_options.clone()
     }
+    pub fn get_max_players(&self) -> u8 {
+        self.get_data().max_players
+    }
 }
 
 // Attrition game mode

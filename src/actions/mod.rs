@@ -36,6 +36,11 @@ pub enum ClientToServer {
     #[serde(rename = "sendPlayerDeck")]
     SendPlayerDeck { deck: String },
 
+    #[serde(rename = "sendPlayerJokers")]
+    SendPlayerJokers {
+        jokers: String,
+    },
+
     #[serde(rename = "setFurthestBlind")]
     SetFurthestBlind { blind: u32 },
 
@@ -161,6 +166,9 @@ pub enum ServerToClient {
     #[serde(rename = "winGame")]
     WinGame {},
 
+    #[serde(rename = "receivePlayerJokers")]
+    ReceivePlayerJokers { player_id: Uuid, jokers: String },
+
     #[serde(rename = "receivePlayerDeck")]
     ReceivePlayerDeck { player_id: Uuid, deck: String },
 
@@ -221,6 +229,17 @@ impl ServerToClient {
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| {
             r#"{"action":"error","message":"Serialization failed"}"#.to_string()
+        })
+    }
+
+    // MessagePack conversion
+    pub fn to_msgpack(&self) -> Vec<u8> {
+        rmp_serde::to_vec(self).unwrap_or_else(|_| {
+            // Fallback error message in MessagePack format
+            let error_response = ServerToClient::Error {
+                message: "Serialization failed".to_string(),
+            };
+            rmp_serde::to_vec(&error_response).unwrap_or_default()
         })
     }
 

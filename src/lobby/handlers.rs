@@ -84,6 +84,10 @@ impl LobbyHandlers {
         hands_max: u8,
         discards_max: u8,
     ) {
+        debug!(
+            "Player {} updating hands max to {} and discards max to {}",
+            player_id, hands_max, discards_max
+        );
         Self::update_player_and_broadcast(lobby, broadcaster, player_id, false, |player| {
             player.game_state.hands_max = hands_max;
             player.game_state.discards_max = discards_max;

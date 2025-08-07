@@ -26,6 +26,7 @@ pub struct ClientGameState {
     pub score: TalismanNumber,
     pub highest_score: TalismanNumber,
     pub spent_in_shop: Vec<u32>,
+    pub team: u8
 }
 
 impl Default for ClientGameState {
@@ -45,6 +46,7 @@ impl Default for ClientGameState {
             score: TalismanNumber::Regular(0.0),
             highest_score: TalismanNumber::Regular(0.0),
             spent_in_shop: Vec::new(),
+            team: 1,
         }
     }
 }
