@@ -1,3 +1,4 @@
+use crate::actions::ServerToClient;
 use crate::lobby::lobby_task;
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use std::collections::HashMap;
@@ -7,7 +8,7 @@ use tracing::info;
 /// Simple lobby coordinator that routes messages to individual lobby tasks
 pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessage>) {
     let mut lobby_senders: HashMap<String, mpsc::UnboundedSender<LobbyMessage>> = HashMap::new();
-    let mut client_lobbies: HashMap<uuid::Uuid, String> = HashMap::new();
+    let mut client_lobbies: HashMap<String, String> = HashMap::new();
 
     info!("Lobby coordinator started");
 
@@ -27,7 +28,7 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                 // Create the lobby task
                 let (lobby_tx, lobby_rx) = mpsc::unbounded_channel();
                 lobby_senders.insert(lobby_code.clone(), lobby_tx.clone());
-                client_lobbies.insert(client_id, lobby_code.clone());
+                client_lobbies.insert(client_id.clone(), lobby_code.clone());
                 // Spawn the lobby task
                 tokio::spawn(lobby_task(lobby_code.clone(), lobby_rx, ruleset, game_mode));
 
@@ -59,30 +60,20 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                     });
                     // Try to forward to lobby task
                     if let Err(_) = lobby_tx.send(LobbyMessage::PlayerJoined {
-                        player_id: client_id,
+                        player_id: client_id.clone(),
                         client_profile: client_profile.clone(),
                         client_response_tx: client_response_tx.clone(),
                     }) {
-                        // Failed to send to lobby, send error response
-                        let _ = client_response_tx.send(
-                            serde_json::json!({
-                                "action": "error",
-                                "message": "Failed to join lobby"
-                            })
-                            .to_string(),
-                        );
+                                                // Failed to send to lobby, send error response
+                        let error_response = ServerToClient::error("Failed to join lobby");
+                        let _ = client_response_tx.send(error_response.to_msgpack());
                     } else {
-                        client_lobbies.insert(client_id, lobby_code.clone());
+                        client_lobbies.insert(client_id.clone(), lobby_code.clone());
                     }
                 } else {
                     // Lobby doesn't exist
-                    let _ = client_response_tx.send(
-                        serde_json::json!({
-                            "action": "error",
-                            "message": "Lobby not found"
-                        })
-                        .to_string(),
-                    );
+                        let error_response = ServerToClient::error("Lobby does not exist");
+                        let _ = client_response_tx.send(error_response.to_msgpack());
                 }
             }
 

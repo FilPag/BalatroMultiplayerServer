@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use crate::game_mode::{GameMode, LobbyOptions};
+use crate::lobby::lobby::Lobby;
 use crate::lobby::{ClientGameState, ClientLobbyEntry};
 use crate::talisman_number::TalismanNumber;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 // Client to Server Actions
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -128,7 +128,6 @@ pub enum ServerToClient {
     // Connection responses
     #[serde(rename = "connected")]
     Connected {
-        #[serde(rename = "clientId")]
         client_id: String,
     },
     #[serde(rename = "a")]
@@ -141,13 +140,13 @@ pub enum ServerToClient {
     // Lobby responses
     #[serde(rename = "joinedLobby")]
     JoinedLobby {
-        player_id: Uuid,
-        lobby_data: serde_json::Value, // Using Value to avoid circular dependency
+        player_id: String,
+        lobby_data: Lobby, // Using Value to avoid circular dependency
     },
     #[serde(rename = "playerJoinedLobby")]
     PlayerJoinedLobby { player: ClientLobbyEntry },
     #[serde(rename = "playerLeftLobby")]
-    PlayerLeftLobby { player_id: Uuid, host_id: Uuid },
+    PlayerLeftLobby { player_id: String, host_id: String },
     #[serde(rename = "updateLobbyOptions")]
     UpdateLobbyOptions { options: LobbyOptions },
 
@@ -167,10 +166,10 @@ pub enum ServerToClient {
     WinGame {},
 
     #[serde(rename = "receivePlayerJokers")]
-    ReceivePlayerJokers { player_id: Uuid, jokers: String },
+    ReceivePlayerJokers { player_id: String, jokers: String },
 
     #[serde(rename = "receivePlayerDeck")]
-    ReceivePlayerDeck { player_id: Uuid, deck: String },
+    ReceivePlayerDeck { player_id: String, deck: String },
 
     #[serde(rename = "setBossBlind")]
     SetBossBlind { key: String },
@@ -180,7 +179,7 @@ pub enum ServerToClient {
 
     #[serde(rename = "gameStateUpdate")]
     GameStateUpdate {
-        player_id: Uuid,
+        player_id: String,
         game_state: ClientGameState,
     },
 
@@ -188,7 +187,7 @@ pub enum ServerToClient {
     ResetPlayers { players: Vec<ClientLobbyEntry> },
 
     #[serde(rename = "lobbyReady")]
-    LobbyReady { ready_states: HashMap<Uuid, bool> },
+    LobbyReady { ready_states: HashMap<String, bool> },
 
     // Multiplayer joker responses
     #[serde(rename = "sendPhantom")]
@@ -210,7 +209,7 @@ pub enum ServerToClient {
     SoldJoker {},
 
     #[serde(rename = "spentLastShop")]
-    SpentLastShop { player_id: Uuid, amount: u32 },
+    SpentLastShop { player_id: String, amount: u32 },
 
     #[serde(rename = "startAnteTimer")]
     StartAnteTimer { time: u32 },
@@ -234,19 +233,19 @@ impl ServerToClient {
 
     // MessagePack conversion
     pub fn to_msgpack(&self) -> Vec<u8> {
-        rmp_serde::to_vec(self).unwrap_or_else(|_| {
+        rmp_serde::to_vec_named(self).unwrap_or_else(|_| {
             // Fallback error message in MessagePack format
             let error_response = ServerToClient::Error {
                 message: "Serialization failed".to_string(),
             };
-            rmp_serde::to_vec(&error_response).unwrap_or_default()
+            rmp_serde::to_vec_named(&error_response).unwrap_or_default()
         })
     }
 
     // Helper constructors for common responses
-    pub fn connected(client_id: Uuid) -> Self {
+    pub fn connected(client_id: String) -> Self {
         Self::Connected {
-            client_id: client_id.to_string(),
+            client_id: client_id,
         }
     }
 
@@ -256,7 +255,7 @@ impl ServerToClient {
         }
     }
 
-    pub fn joined_lobby(player_id: Uuid, lobby_data: serde_json::Value) -> Self {
+    pub fn joined_lobby(player_id: String, lobby_data: Lobby) -> Self {
         Self::JoinedLobby {
             player_id,
             lobby_data,
@@ -267,7 +266,10 @@ impl ServerToClient {
         Self::PlayerJoinedLobby { player }
     }
 
-    pub fn player_left_lobby(player_id: Uuid, host_id: Uuid) -> Self {
-        Self::PlayerLeftLobby { player_id, host_id }
+    pub fn player_left_lobby(player_id: String, host_id: String) -> Self {
+        Self::PlayerLeftLobby {
+            player_id,
+            host_id: host_id,
+        }
     }
 }

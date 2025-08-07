@@ -1,7 +1,6 @@
 use super::{broadcaster::LobbyBroadcaster, lobby::Lobby};
 use crate::talisman_number::TalismanNumber;
 use tracing::{debug, error};
-use uuid::Uuid;
 
 // KISS: Group related handlers
 pub struct LobbyHandlers;
@@ -11,7 +10,7 @@ impl LobbyHandlers {
     fn update_player_and_broadcast<F>(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
+        player_id: &str,
         exclude_player: bool,
         update_fn: F,
     ) where
@@ -26,7 +25,7 @@ impl LobbyHandlers {
     pub fn handle_play_hand(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
+        player_id: &str,
         score: TalismanNumber,
         hands_left: u8,
     ) {
@@ -57,7 +56,7 @@ impl LobbyHandlers {
     pub fn handle_set_location(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
+        player_id: &str,
         location: String,
     ) {
         Self::update_player_and_broadcast(lobby, broadcaster, player_id, false, |player| {
@@ -68,7 +67,7 @@ impl LobbyHandlers {
     pub fn handle_skip(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
+        player_id: &str,
         blind: u32,
     ) {
         Self::update_player_and_broadcast(lobby, broadcaster, player_id, false, |player| {
@@ -80,7 +79,7 @@ impl LobbyHandlers {
     pub fn handle_update_hands_and_discards(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
+        player_id: &str,
         hands_max: u8,
         discards_max: u8,
     ) {
@@ -95,7 +94,7 @@ impl LobbyHandlers {
     }
 
     // Multiplayer joker handlers - these broadcast to other players
-    pub fn handle_send_phantom(broadcaster: &LobbyBroadcaster, player_id: Uuid, key: String) {
+    pub fn handle_send_phantom(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
         debug!("Player {} sending phantom joker: {}", player_id, key);
         broadcaster.broadcast_except(
             player_id,
@@ -103,7 +102,7 @@ impl LobbyHandlers {
         );
     }
 
-    pub fn handle_remove_phantom(broadcaster: &LobbyBroadcaster, player_id: Uuid, key: String) {
+    pub fn handle_remove_phantom(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
         debug!("Player {} removing phantom joker: {}", player_id, key);
         broadcaster.broadcast_except(
             player_id,
@@ -111,12 +110,12 @@ impl LobbyHandlers {
         );
     }
 
-    pub fn handle_asteroid(broadcaster: &LobbyBroadcaster, player_id: Uuid) {
+    pub fn handle_asteroid(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} triggered asteroid", player_id);
         broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::Asteroid {});
     }
 
-    pub fn handle_lets_go_gambling_nemesis(broadcaster: &LobbyBroadcaster, player_id: Uuid) {
+    pub fn handle_lets_go_gambling_nemesis(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} triggered lets go gambling nemesis", player_id);
         broadcaster.broadcast_except(
             player_id,
@@ -127,7 +126,7 @@ impl LobbyHandlers {
     pub fn set_furthest_blind(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
-        player_id: Uuid,
+        player_id: &str,
         blind: u32,
     ) {
         debug!(
@@ -149,7 +148,7 @@ impl LobbyHandlers {
         }
     }
 
-    pub fn handle_eat_pizza(broadcaster: &LobbyBroadcaster, player_id: Uuid, discards: u8) {
+    pub fn handle_eat_pizza(broadcaster: &LobbyBroadcaster, player_id: &str, discards: u8) {
         debug!(
             "Player {} eating pizza for {} discards",
             player_id, discards
@@ -160,23 +159,23 @@ impl LobbyHandlers {
         );
     }
 
-    pub fn handle_sold_joker(broadcaster: &LobbyBroadcaster, player_id: Uuid) {
+    pub fn handle_sold_joker(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} sold a joker", player_id);
         broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::SoldJoker {});
     }
 
-    pub fn handle_spent_last_shop(broadcaster: &LobbyBroadcaster, player_id: Uuid, amount: u32) {
+    pub fn handle_spent_last_shop(broadcaster: &LobbyBroadcaster, player_id: &str, amount: u32) {
         //TODO fix the vector handling here
         debug!("Player {} spent {} in shop", player_id, amount);
-        broadcaster.broadcast(crate::actions::ServerToClient::SpentLastShop { player_id, amount });
+        broadcaster.broadcast(crate::actions::ServerToClient::SpentLastShop { player_id: player_id.to_string(), amount });
     }
 
-    pub fn handle_magnet(broadcaster: &LobbyBroadcaster, player_id: Uuid) {
+    pub fn handle_magnet(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} triggered magnet", player_id);
         broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::Magnet {});
     }
 
-    pub fn handle_magnet_response(broadcaster: &LobbyBroadcaster, player_id: Uuid, key: String) {
+    pub fn handle_magnet_response(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
         debug!("Player {} responding to magnet with: {}", player_id, key);
         broadcaster.broadcast_except(
             player_id,
@@ -184,7 +183,7 @@ impl LobbyHandlers {
         );
     }
 
-    pub fn handle_fail_timer(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: Uuid) {
+    pub fn handle_fail_timer(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} failed timer", player_id);
         lobby.apply_life_loss(player_id);
         lobby.broadcast_life_updates(broadcaster, player_id);
