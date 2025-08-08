@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 pub struct LobbyBroadcaster {
-    player_senders: HashMap<String, mpsc::UnboundedSender<Vec<u8>>>,
+    player_senders: HashMap<String, mpsc::UnboundedSender<ServerToClient>>,
 }
 
 impl LobbyBroadcaster {
@@ -13,7 +13,7 @@ impl LobbyBroadcaster {
         }
     }
 
-    pub fn add_player(&mut self, player_id: String, sender: mpsc::UnboundedSender<Vec<u8>>) {
+    pub fn add_player(&mut self, player_id: String, sender: mpsc::UnboundedSender<ServerToClient>) {
         self.player_senders.insert(player_id, sender);
     }
 
@@ -23,7 +23,7 @@ impl LobbyBroadcaster {
 
     pub fn send_to(&self, player_id: &str, response: ServerToClient) {
         if let Some(sender) = self.player_senders.get(player_id) {
-            let _ = sender.send(response.to_msgpack());
+            let _ = sender.send(response);
         }
     }
 
@@ -32,10 +32,9 @@ impl LobbyBroadcaster {
     where
         F: Fn(&str) -> bool,
     {
-        let message = response.to_msgpack();
         for (player_id, sender) in self.player_senders.iter(){
             if filter(player_id) {
-                let _ = sender.send(message.clone());
+                let _ = sender.send(response.clone());
             }
         }
     }

@@ -37,9 +37,7 @@ pub enum ClientToServer {
     SendPlayerDeck { deck: String },
 
     #[serde(rename = "sendPlayerJokers")]
-    SendPlayerJokers {
-        jokers: String,
-    },
+    SendPlayerJokers { jokers: String },
 
     #[serde(rename = "setFurthestBlind")]
     SetFurthestBlind { blind: u32 },
@@ -119,6 +117,10 @@ pub enum ClientToServer {
 
     #[serde(rename = "magnetResponse")]
     MagnetResponse { key: String },
+
+    #[serde(rename = "sendMoney")]
+    SendMoney { player_id: String },
+
 }
 
 // Server to Client Actions
@@ -127,9 +129,7 @@ pub enum ClientToServer {
 pub enum ServerToClient {
     // Connection responses
     #[serde(rename = "connected")]
-    Connected {
-        client_id: String,
-    },
+    Connected { client_id: String },
     #[serde(rename = "a")]
     KeepAliveResponse {},
     #[serde(rename = "versionOk")]
@@ -147,6 +147,7 @@ pub enum ServerToClient {
     PlayerJoinedLobby { player: ClientLobbyEntry },
     #[serde(rename = "playerLeftLobby")]
     PlayerLeftLobby { player_id: String, host_id: String },
+
     #[serde(rename = "updateLobbyOptions")]
     UpdateLobbyOptions { options: LobbyOptions },
 
@@ -221,6 +222,9 @@ pub enum ServerToClient {
 
     #[serde(rename = "magnetResponse")]
     MagnetResponse { key: String },
+
+    #[serde(rename = "receivedMoney")]
+    ReceivedMoney {},
 }
 
 impl ServerToClient {
