@@ -5,7 +5,7 @@ use crate::{
     messages::{CoordinatorMessage, LobbyMessage},
 };
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Individual lobby task - handles 2-4 players
 pub async fn lobby_task(
@@ -72,15 +72,14 @@ pub async fn lobby_task(
                     let _ = client_response_tx.send(
                         ServerToClient::Error {
                             message: String::from("Lobby is already started"),
-                        }
-                        .to_msgpack(),
+                        },
                     );
                 } else if lobby.is_full() {
                     let _ = client_response_tx.send(
                         ServerToClient::Error {
                             message: String::from("Lobby is full"),
                         }
-                        .to_msgpack(),
+                        ,
                     );
                 }
 
@@ -93,7 +92,8 @@ pub async fn lobby_task(
                 }
 
                 // Send joined lobby response
-                let joined_response = ServerToClient::joined_lobby(player_id.clone(), lobby.clone());
+                let joined_response =
+                    ServerToClient::joined_lobby(player_id.clone(), lobby.clone());
                 broadcaster.send_to(&player_id, joined_response);
 
                 // Broadcast player joined to others
@@ -126,7 +126,8 @@ pub async fn lobby_task(
                 }
 
                 // Broadcast to remaining players
-                let player_left_response = ServerToClient::player_left_lobby(player_id.clone(), host_id.clone());
+                let player_left_response =
+                    ServerToClient::player_left_lobby(player_id.clone(), host_id.clone());
                 broadcaster.broadcast(player_left_response);
 
                 debug!("Player {} left lobby {}", player_id, lobby.code);
@@ -258,9 +259,15 @@ pub async fn lobby_task(
                 debug!("Sending jokers for player {}: {}", player_id, jokers);
                 broadcaster.broadcast_except(
                     &player_id,
-                    ServerToClient::ReceivePlayerJokers { player_id: player_id.clone(), jokers },
+                    ServerToClient::ReceivePlayerJokers {
+                        player_id: player_id.clone(),
+                        jokers,
+                    },
                 );
             }
+            LobbyMessage::SendMoney { from, to } => {
+                broadcaster.send_to(&to, ServerToClient::ReceivedMoney { });
+            },
         }
     }
     debug!("Lobby {} task ended", lobby_code);
