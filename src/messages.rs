@@ -1,5 +1,6 @@
 use tokio::sync::{mpsc, oneshot};
 
+use crate::actions::ServerToClient;
 use crate::client::ClientProfile;
 use crate::game_mode::{GameMode, LobbyOptions};
 use crate::talisman_number::TalismanNumber;
@@ -13,7 +14,7 @@ pub enum CoordinatorMessage {
         ruleset: String,
         game_mode: GameMode,
         request_tx: oneshot::Sender<LobbyMessage>,
-        client_response_tx: mpsc::UnboundedSender<Vec<u8>>,
+        client_response_tx: mpsc::UnboundedSender<ServerToClient>,
         client_profile: ClientProfile,
     },
     /// A client wants to join an existing lobby
@@ -21,7 +22,7 @@ pub enum CoordinatorMessage {
         client_id: String,
         lobby_code: String,
         request_tx: oneshot::Sender<LobbyMessage>,
-        client_response_tx: mpsc::UnboundedSender<Vec<u8>>,
+        client_response_tx: mpsc::UnboundedSender<ServerToClient>,
         client_profile: ClientProfile,
     },
 
@@ -52,7 +53,7 @@ pub enum LobbyMessage {
 
     PlayerJoined {
         player_id: String,
-        client_response_tx: mpsc::UnboundedSender<Vec<u8>>,
+        client_response_tx: mpsc::UnboundedSender<ServerToClient>,
         client_profile: ClientProfile,
     },
     /// A player left the lobby
@@ -176,5 +177,10 @@ pub enum LobbyMessage {
     MagnetResponse {
         player_id: String,
         key: String,
+    },
+
+    SendMoney {
+        from: String,
+        to: String,
     },
 }

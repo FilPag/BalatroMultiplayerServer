@@ -66,14 +66,14 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                     }) {
                                                 // Failed to send to lobby, send error response
                         let error_response = ServerToClient::error("Failed to join lobby");
-                        let _ = client_response_tx.send(error_response.to_msgpack());
+                        let _ = client_response_tx.send(error_response);
                     } else {
                         client_lobbies.insert(client_id.clone(), lobby_code.clone());
                     }
                 } else {
                     // Lobby doesn't exist
                         let error_response = ServerToClient::error("Lobby does not exist");
-                        let _ = client_response_tx.send(error_response.to_msgpack());
+                        let _ = client_response_tx.send(error_response);
                 }
             }
 

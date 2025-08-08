@@ -2,7 +2,7 @@ use crate::actions::{ClientToServer, ServerToClient};
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info};
@@ -61,6 +61,60 @@ impl Client {
         }
     }
 }
+
+// Helper errors for reading a single ClientToServer action
+#[derive(Debug)]
+enum ReadActionError {
+    Io(std::io::Error),
+    EmptyFrame,
+    Oversized { len: usize, max: usize },
+    Malformed(rmp_serde::decode::Error),
+}
+
+impl std::fmt::Display for ReadActionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReadActionError::Io(e) => write!(f, "io error: {e}"),
+            ReadActionError::EmptyFrame => write!(f, "empty frame"),
+            ReadActionError::Oversized { len, max } => {
+                write!(f, "oversized frame {len} > {max}")
+            }
+            ReadActionError::Malformed(e) => write!(f, "malformed message: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for ReadActionError {}
+
+const MAX_MESSAGE_SIZE: usize = 256 * 1024; // 256 KiB safety cap
+
+// Read one action from the socket; uses '?' for IO steps
+async fn read_client_action(
+    reader: &mut OwnedReadHalf,
+) -> Result<ClientToServer, ReadActionError> {
+    let mut length_bytes = [0u8; 4];
+    reader
+        .read_exact(&mut length_bytes)
+        .await
+        .map_err(ReadActionError::Io)?;
+    let length = u32::from_be_bytes(length_bytes) as usize;
+    if length == 0 {
+        return Err(ReadActionError::EmptyFrame);
+    }
+    if length > MAX_MESSAGE_SIZE {
+        return Err(ReadActionError::Oversized {
+            len: length,
+            max: MAX_MESSAGE_SIZE,
+        });
+    }
+    let mut buf = vec![0u8; length];
+    reader
+        .read_exact(&mut buf)
+        .await
+        .map_err(ReadActionError::Io)?;
+    rmp_serde::from_slice::<ClientToServer>(&buf).map_err(ReadActionError::Malformed)
+}
+
 /// Simple client handler using message passing
 pub async fn handle_client(
     socket_reader: OwnedReadHalf,
@@ -68,8 +122,8 @@ pub async fn handle_client(
     addr: SocketAddr,
     coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage>,
 ) {
-        // Create channels for this client - use Vec<u8> for MessagePack compatibility
-    let (writer_tx, writer_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    // Create channels for this client - use Vec<u8> for MessagePack compatibility
+    let (writer_tx, writer_rx) = mpsc::unbounded_channel::<ServerToClient>();
 
     let mut client: Client = Client::new(Some(coordinator_tx.clone()));
     let client_id = client.profile.id.clone();
@@ -78,49 +132,47 @@ pub async fn handle_client(
 
     // Send initial handshake
     let connected_response = ServerToClient::connected(client_id.clone());
-    let _ = writer_tx.send(connected_response.to_msgpack());
+    let _ = writer_tx.send(connected_response);
 
     // Spawn task to handle writing to the client socket
     let write_task = tokio::spawn(handle_client_writer(socket_writer, writer_rx));
 
-    // Track client state
-
-    // Read from client
     let mut reader = socket_reader;
 
+    // ---- Read loop using helper ----
     loop {
-        // Read 4-byte length header
-        let mut length_bytes = [0u8; 4];
-        match reader.read_exact(&mut length_bytes).await {
-            Ok(_) => {
-                let length = u32::from_be_bytes(length_bytes) as usize;
-                
-                // Read MessagePack data
-                let mut msgpack_data = vec![0u8; length];
-                debug!("Reading {} bytes from client {}", length, client_id);
-                match reader.read_exact(&mut msgpack_data).await {
-                    Ok(_) => {
-                        // Parse MessagePack
-                        match rmp_serde::from_slice::<ClientToServer>(&msgpack_data) {
-                            Ok(action) => {
-                                if let Err(e) = handle_client_action(client_id.clone(), action, &mut client, &writer_tx).await {
-                                    error!("Error handling action for client {}: {}", client_id, e);
-                                    let error_response = ServerToClient::error(&format!("Action failed: {}", e));
-                                    let _ = writer_tx.send(error_response.to_msgpack());
-                                }
-                            }
-                            Err(e) => {
-                                error!("Failed to parse MessagePack from {}: {}", addr, e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to read MessagePack data from {}: {}", addr, e);
-                        break;
-                    }
+        match read_client_action(&mut reader).await {
+            Ok(action) => {
+                if let Err(e) = handle_client_action(
+                    client_id.clone(),
+                    action,
+                    &mut client,
+                    &writer_tx,
+                )
+                .await
+                {
+                    error!("Action error for client {}: {}", client_id, e);
+                    let _ = writer_tx.send(
+                        ServerToClient::error(&format!("Action failed: {}", e)),
+                    );
                 }
             }
-            Err(e) => {
+            Err(ReadActionError::EmptyFrame) => {
+                error!("Client {} sent empty frame", client_id);
+                let _ = writer_tx.send(ServerToClient::error("Empty message"));
+                continue;
+            }
+            Err(ReadActionError::Oversized { len, max }) => {
+                error!("Client {} sent oversized frame ({} > {})", client_id, len, max);
+                let _ = writer_tx.send(ServerToClient::error("Message too large"));
+                break; // Protocol abuse -> disconnect
+            }
+            Err(ReadActionError::Malformed(e)) => {
+                error!("Failed to parse MessagePack from {}: {}", addr, e);
+                let _ = writer_tx.send(ServerToClient::error("Malformed message"));
+                continue; // Allow next messages
+            }
+            Err(ReadActionError::Io(e)) => {
                 info!("Client {} disconnected: {}", client_id, e);
                 break;
             }
@@ -140,17 +192,23 @@ pub async fn handle_client(
 }
 
 /// Handle writing messages to the client socket
-async fn handle_client_writer(mut writer: OwnedWriteHalf, mut rx: mpsc::UnboundedReceiver<Vec<u8>>) {
+async fn handle_client_writer(
+    mut writer: OwnedWriteHalf,
+    mut rx: mpsc::UnboundedReceiver<ServerToClient>,
+) {
     while let Some(message) = rx.recv().await {
+
         // Send 4-byte length header + MessagePack data
-        let length = message.len() as u32;
+        let buff = message.to_msgpack();
+
+        let length = buff.len() as u32;
         let length_bytes = length.to_be_bytes();
-        
+
         if let Err(e) = writer.write_all(&length_bytes).await {
             error!("Failed to write length header: {}", e);
             break;
         }
-        if let Err(e) = writer.write_all(&message).await {
+        if let Err(e) = writer.write_all(&buff).await {
             error!("Failed to write MessagePack data: {}", e);
             break;
         }
@@ -162,18 +220,18 @@ async fn handle_client_action(
     client_id: String,
     action: ClientToServer,
     client: &mut Client,
-    response_tx: &mpsc::UnboundedSender<Vec<u8>>,
+    response_tx: &mpsc::UnboundedSender<ServerToClient>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match action {
         ClientToServer::KeepAlive {} => {
             // Simple keep-alive response
             let response = ServerToClient::KeepAliveResponse {};
-            response_tx.send(response.to_msgpack())?;
+            response_tx.send(response)?;
         }
         ClientToServer::Version { version } => {
             debug!("Client {} version: {}", client_id, version);
             let response = ServerToClient::VersionOk {};
-            response_tx.send(response.to_msgpack())?;
+            response_tx.send(response)?;
         }
         ClientToServer::SetClientData {
             username: new_username,
@@ -211,7 +269,7 @@ async fn handle_client_action(
                     }
                     _ => {
                         let error_response = ServerToClient::error("Failed to create lobby");
-                        response_tx.send(error_response.to_msgpack())?;
+                        response_tx.send(error_response)?;
                     }
                 }
             }
@@ -237,7 +295,7 @@ async fn handle_client_action(
                     }
                     _ => {
                         let error_response = ServerToClient::error("Failed to join lobby");
-                        response_tx.send(error_response.to_msgpack())?;
+                        response_tx.send(error_response)?;
                     }
                 }
             }
@@ -418,6 +476,12 @@ async fn handle_client_action(
             client.send_to_lobby(LobbyMessage::SendPlayerJokers {
                 player_id: client_id,
                 jokers,
+            })?;
+        }
+        ClientToServer::SendMoney { player_id } => {
+            client.send_to_lobby(LobbyMessage::SendMoney {
+                from: client_id.clone(),
+                to: player_id,
             })?;
         }
     }

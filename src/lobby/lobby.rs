@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tracing::{debug, error};
 use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::rng;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Lobby {
@@ -55,7 +55,7 @@ impl Lobby {
 
     pub fn randomize_teams(&mut self, team_size: u8) {
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut player_ids: Vec<String> = self.players.keys().cloned().collect();
         player_ids.shuffle(&mut rng);
 
