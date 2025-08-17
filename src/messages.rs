@@ -137,6 +137,7 @@ pub enum LobbyMessage {
 
     Asteroid {
         player_id: String,
+        target: String,
     },
 
     LetsGoGamblingNemesis {

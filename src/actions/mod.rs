@@ -89,7 +89,9 @@ pub enum ClientToServer {
     RemovePhantom { key: String },
 
     #[serde(rename = "asteroid")]
-    Asteroid {},
+    Asteroid {
+        target: String,
+    },
 
     #[serde(rename = "letsGoGamblingNemesis")]
     LetsGoGamblingNemesis {},
@@ -198,7 +200,9 @@ pub enum ServerToClient {
     RemovePhantom { key: String },
 
     #[serde(rename = "asteroid")]
-    Asteroid {},
+    Asteroid {
+        sender: String,
+    },
 
     #[serde(rename = "letsGoGamblingNemesis")]
     LetsGoGamblingNemesis {},

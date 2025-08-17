@@ -1,0 +1,7 @@
+[jobs.dev]
+command = ["cargo", "run", "--", "--config-path", "/home/nitesh/Documents/zbd/lightning-interceptor-service/rust/config.toml"]
+need_stdout = true
+env = { "RUST_LOG" = "debug" }
+background = false
+on_change_strategy = "kill_then_restart"
+kill = ["kill", "-s", "INT"]

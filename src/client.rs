@@ -411,9 +411,10 @@ async fn handle_client_action(
                 key,
             })?;
         }
-        ClientToServer::Asteroid {} => {
+        ClientToServer::Asteroid { target } => {
             client.send_to_lobby(LobbyMessage::Asteroid {
                 player_id: client_id,
+                target,
             })?;
         }
         ClientToServer::LetsGoGamblingNemesis {} => {

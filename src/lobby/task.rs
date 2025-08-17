@@ -207,8 +207,8 @@ pub async fn lobby_task(
             LobbyMessage::RemovePhantom { player_id, key } => {
                 LobbyHandlers::handle_remove_phantom(&broadcaster, &player_id, key);
             }
-            LobbyMessage::Asteroid { player_id } => {
-                LobbyHandlers::handle_asteroid(&broadcaster, &player_id);
+            LobbyMessage::Asteroid { player_id, target } => {
+                LobbyHandlers::handle_asteroid(&broadcaster, &target, &player_id);
             }
             LobbyMessage::LetsGoGamblingNemesis { player_id } => {
                 LobbyHandlers::handle_lets_go_gambling_nemesis(&broadcaster, &player_id);

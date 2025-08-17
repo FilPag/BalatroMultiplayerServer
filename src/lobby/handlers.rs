@@ -1,4 +1,5 @@
 use super::{broadcaster::LobbyBroadcaster, lobby::Lobby};
+use crate::actions::ServerToClient;
 use crate::talisman_number::TalismanNumber;
 use tracing::{debug, error};
 
@@ -106,20 +107,25 @@ impl LobbyHandlers {
         debug!("Player {} removing phantom joker: {}", player_id, key);
         broadcaster.broadcast_except(
             player_id,
-            crate::actions::ServerToClient::RemovePhantom { key },
+            ServerToClient::RemovePhantom { key },
         );
     }
 
-    pub fn handle_asteroid(broadcaster: &LobbyBroadcaster, player_id: &str) {
-        debug!("Player {} triggered asteroid", player_id);
-        broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::Asteroid {});
+    pub fn handle_asteroid(broadcaster: &LobbyBroadcaster, player_id: &str, target: &str) {
+        debug!("Player {} sent asteroid to {}", player_id, target);
+        broadcaster.send_to(
+            player_id,
+            ServerToClient::Asteroid {
+                sender: target.to_string(),
+            },
+        );
     }
 
     pub fn handle_lets_go_gambling_nemesis(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} triggered lets go gambling nemesis", player_id);
         broadcaster.broadcast_except(
             player_id,
-            crate::actions::ServerToClient::LetsGoGamblingNemesis {},
+            ServerToClient::LetsGoGamblingNemesis {},
         );
     }
 
@@ -167,7 +173,10 @@ impl LobbyHandlers {
     pub fn handle_spent_last_shop(broadcaster: &LobbyBroadcaster, player_id: &str, amount: u32) {
         //TODO fix the vector handling here
         debug!("Player {} spent {} in shop", player_id, amount);
-        broadcaster.broadcast(crate::actions::ServerToClient::SpentLastShop { player_id: player_id.to_string(), amount });
+        broadcaster.broadcast(crate::actions::ServerToClient::SpentLastShop {
+            player_id: player_id.to_string(),
+            amount,
+        });
     }
 
     pub fn handle_magnet(broadcaster: &LobbyBroadcaster, player_id: &str) {
@@ -191,6 +200,8 @@ impl LobbyHandlers {
         if game_over {
             lobby.handle_game_end(broadcaster, &winners, &losers);
         }
-        broadcaster.broadcast(crate::actions::ServerToClient::PauseAnteTimer { time: (lobby.lobby_options.timer_base_seconds) });
+        broadcaster.broadcast(crate::actions::ServerToClient::PauseAnteTimer {
+            time: (lobby.lobby_options.timer_base_seconds),
+        });
     }
 }
