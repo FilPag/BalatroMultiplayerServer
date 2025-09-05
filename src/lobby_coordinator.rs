@@ -2,6 +2,7 @@ use crate::actions::ServerToClient;
 use crate::lobby::lobby_task;
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -64,15 +65,15 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                         client_profile: client_profile.clone(),
                         client_response_tx: client_response_tx.clone(),
                     }) {
-                                                // Failed to send to lobby, send error response
-                        let error_response = ServerToClient::error("Failed to join lobby");
+                        // Failed to send to lobby, send error response
+                        let error_response = Arc::new(ServerToClient::error("Failed to join lobby"));
                         let _ = client_response_tx.send(error_response);
                     } else {
                         client_lobbies.insert(client_id.clone(), lobby_code.clone());
                     }
                 } else {
                     // Lobby doesn't exist
-                        let error_response = ServerToClient::error("Lobby does not exist");
+                        let error_response = Arc::new(ServerToClient::error("Lobby does not exist"));
                         let _ = client_response_tx.send(error_response);
                 }
             }

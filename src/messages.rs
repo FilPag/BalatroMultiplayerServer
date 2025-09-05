@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tokio::sync::{mpsc, oneshot};
 
 use crate::actions::ServerToClient;
@@ -14,7 +16,7 @@ pub enum CoordinatorMessage {
         ruleset: String,
         game_mode: GameMode,
         request_tx: oneshot::Sender<LobbyMessage>,
-        client_response_tx: mpsc::UnboundedSender<ServerToClient>,
+        client_response_tx: mpsc::UnboundedSender<Arc<ServerToClient>>,
         client_profile: ClientProfile,
     },
     /// A client wants to join an existing lobby
@@ -22,7 +24,7 @@ pub enum CoordinatorMessage {
         client_id: String,
         lobby_code: String,
         request_tx: oneshot::Sender<LobbyMessage>,
-        client_response_tx: mpsc::UnboundedSender<ServerToClient>,
+        client_response_tx: mpsc::UnboundedSender<Arc<ServerToClient>>,
         client_profile: ClientProfile,
     },
 
@@ -53,7 +55,7 @@ pub enum LobbyMessage {
 
     PlayerJoined {
         player_id: String,
-        client_response_tx: mpsc::UnboundedSender<ServerToClient>,
+        client_response_tx: mpsc::UnboundedSender<Arc<ServerToClient>>,
         client_profile: ClientProfile,
     },
     /// A player left the lobby

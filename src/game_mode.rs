@@ -11,6 +11,8 @@ pub enum GameMode {
     Survival,
     #[serde(rename = "gamemode_mp_coopSurvival")]
     CoopSurvival,
+    #[serde(rename = "gamemode_mp_clash")]
+    Clash,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +56,7 @@ impl GameMode {
             GameMode::Attrition => &ATTRITION_DATA,
             GameMode::Showdown => &SHOWDOWN_DATA,
             GameMode::Survival => &SURVIVAL_DATA,
+            GameMode::Clash => &CLASH_DATA,
             GameMode::CoopSurvival => &COOP_SURVIVAL_DATA,
         }
     }
@@ -154,7 +157,7 @@ static COOP_SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeDat
         death_on_round_loss: true,
         different_decks: true,
         different_seeds: true,
-        disable_live_and_timer_hud: false,
+        disable_live_and_timer_hud: true,
         gamemode: GameMode::CoopSurvival,
         ruleset: String::from("ruleset_mp_coop"),
         gold_on_life_loss: false,
@@ -165,6 +168,31 @@ static COOP_SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeDat
         showdown_starting_antes: 3,
         stake: 1,
         starting_lives: 2,
+        timer_base_seconds: 150,
+        timer_increment_seconds: 60,
+    },
+});
+
+static CLASH_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
+    max_players: 6,
+    default_options: LobbyOptions {
+        back: String::from("Red Deck"),
+        challenge: String::from(""),
+        custom_seed: String::from("random"),
+        death_on_round_loss: true,
+        different_decks: true,
+        different_seeds: true,
+        disable_live_and_timer_hud: true,
+        gamemode: GameMode::Clash,
+        ruleset: String::from("ruleset_mp_clash"),
+        gold_on_life_loss: true,
+        multiplayer_jokers: true,
+        no_gold_on_round_loss: true,
+        normal_bosses: false,
+        pvp_start_round: 1,
+        showdown_starting_antes: 1,
+        stake: 1,
+        starting_lives: 100,
         timer_base_seconds: 150,
         timer_increment_seconds: 60,
     },
@@ -191,6 +219,7 @@ impl std::fmt::Display for GameMode {
             GameMode::Showdown => write!(f, "Showdown"),
             GameMode::Survival => write!(f, "Survival"),
             GameMode::CoopSurvival => write!(f, "CoopSurvival"),
+            GameMode::Clash => write!(f, "Clash"),
         }
     }
 }

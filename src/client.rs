@@ -2,6 +2,7 @@ use crate::actions::{ClientToServer, ServerToClient};
 use crate::messages::{CoordinatorMessage, LobbyMessage};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot};
@@ -123,7 +124,7 @@ pub async fn handle_client(
     coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage>,
 ) {
     // Create channels for this client - use Vec<u8> for MessagePack compatibility
-    let (writer_tx, writer_rx) = mpsc::unbounded_channel::<ServerToClient>();
+    let (writer_tx, writer_rx) = mpsc::unbounded_channel::<Arc<ServerToClient>>();
 
     let mut client: Client = Client::new(Some(coordinator_tx.clone()));
     let client_id = client.profile.id.clone();
@@ -131,7 +132,7 @@ pub async fn handle_client(
     info!("Client {} connected from {}", client_id, addr);
 
     // Send initial handshake
-    let connected_response = ServerToClient::connected(client_id.clone());
+    let connected_response = Arc::new(ServerToClient::connected(client_id.clone()));
     let _ = writer_tx.send(connected_response);
 
     // Spawn task to handle writing to the client socket
@@ -153,23 +154,23 @@ pub async fn handle_client(
                 {
                     error!("Action error for client {}: {}", client_id, e);
                     let _ = writer_tx.send(
-                        ServerToClient::error(&format!("Action failed: {}", e)),
+                        Arc::new(ServerToClient::error(&format!("Action failed: {}", e))),
                     );
                 }
             }
             Err(ReadActionError::EmptyFrame) => {
                 error!("Client {} sent empty frame", client_id);
-                let _ = writer_tx.send(ServerToClient::error("Empty message"));
+                let _ = writer_tx.send(Arc::new(ServerToClient::error("Empty message")));
                 continue;
             }
             Err(ReadActionError::Oversized { len, max }) => {
                 error!("Client {} sent oversized frame ({} > {})", client_id, len, max);
-                let _ = writer_tx.send(ServerToClient::error("Message too large"));
+                let _ = writer_tx.send(Arc::new(ServerToClient::error("Message too large")));
                 break; // Protocol abuse -> disconnect
             }
             Err(ReadActionError::Malformed(e)) => {
                 error!("Failed to parse MessagePack from {}: {}", addr, e);
-                let _ = writer_tx.send(ServerToClient::error("Malformed message"));
+                let _ = writer_tx.send(Arc::new(ServerToClient::error("Malformed message")));
                 continue; // Allow next messages
             }
             Err(ReadActionError::Io(e)) => {
@@ -194,7 +195,7 @@ pub async fn handle_client(
 /// Handle writing messages to the client socket
 async fn handle_client_writer(
     mut writer: OwnedWriteHalf,
-    mut rx: mpsc::UnboundedReceiver<ServerToClient>,
+    mut rx: mpsc::UnboundedReceiver<Arc<ServerToClient>>,
 ) {
     while let Some(message) = rx.recv().await {
 
@@ -220,17 +221,17 @@ async fn handle_client_action(
     client_id: String,
     action: ClientToServer,
     client: &mut Client,
-    response_tx: &mpsc::UnboundedSender<ServerToClient>,
+    response_tx: &mpsc::UnboundedSender<Arc<ServerToClient>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match action {
         ClientToServer::KeepAlive {} => {
             // Simple keep-alive response
-            let response = ServerToClient::KeepAliveResponse {};
+            let response = Arc::new(ServerToClient::KeepAliveResponse {});
             response_tx.send(response)?;
         }
         ClientToServer::Version { version } => {
             debug!("Client {} version: {}", client_id, version);
-            let response = ServerToClient::VersionOk {};
+            let response = Arc::new(ServerToClient::VersionOk {});
             response_tx.send(response)?;
         }
         ClientToServer::SetClientData {
@@ -268,7 +269,7 @@ async fn handle_client_action(
                         client.current_lobby = Some(lobby_code);
                     }
                     _ => {
-                        let error_response = ServerToClient::error("Failed to create lobby");
+                        let error_response = Arc::new(ServerToClient::error("Failed to create lobby"));
                         response_tx.send(error_response)?;
                     }
                 }
@@ -294,7 +295,7 @@ async fn handle_client_action(
                         client.current_lobby = Some(lobby_code);
                     }
                     _ => {
-                        let error_response = ServerToClient::error("Failed to join lobby");
+                        let error_response = Arc::new(ServerToClient::error("Failed to join lobby"));
                         response_tx.send(error_response)?;
                     }
                 }

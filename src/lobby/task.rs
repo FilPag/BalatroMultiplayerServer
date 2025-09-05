@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{broadcaster::LobbyBroadcaster, handlers::LobbyHandlers, lobby::Lobby};
 use crate::{
     actions::ServerToClient,
@@ -69,18 +71,13 @@ pub async fn lobby_task(
                 client_profile,
             } => {
                 if lobby.started {
-                    let _ = client_response_tx.send(
-                        ServerToClient::Error {
-                            message: String::from("Lobby is already started"),
-                        },
-                    );
+                    let _ = client_response_tx.send(Arc::new(ServerToClient::Error {
+                        message: String::from("Lobby is already started"),
+                    }));
                 } else if lobby.is_full() {
-                    let _ = client_response_tx.send(
-                        ServerToClient::Error {
-                            message: String::from("Lobby is full"),
-                        }
-                        ,
-                    );
+                    let _ = client_response_tx.send(Arc::new(ServerToClient::Error {
+                        message: String::from("Lobby is full"),
+                    }));
                 }
 
                 broadcaster.add_player(player_id.clone(), client_response_tx.clone());
@@ -266,8 +263,8 @@ pub async fn lobby_task(
                 );
             }
             LobbyMessage::SendMoney { from, to } => {
-                broadcaster.send_to(&to, ServerToClient::ReceivedMoney { });
-            },
+                broadcaster.send_to(&to, ServerToClient::ReceivedMoney {});
+            }
         }
     }
     debug!("Lobby {} task ended", lobby_code);

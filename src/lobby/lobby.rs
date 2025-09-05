@@ -6,11 +6,11 @@ use crate::{
     talisman_number::TalismanNumber,
     utils::time_based_string,
 };
+use rand::rng;
+use rand::seq::SliceRandom;
 use serde::Serialize;
 use std::collections::HashMap;
 use tracing::{debug, error};
-use rand::seq::SliceRandom;
-use rand::rng;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Lobby {
@@ -19,7 +19,7 @@ pub struct Lobby {
     pub boss_chips: TalismanNumber,
     pub lobby_options: LobbyOptions,
     players: HashMap<String, ClientLobbyEntry>,
-    max_players: u8
+    max_players: u8,
 }
 
 impl Lobby {
@@ -54,7 +54,6 @@ impl Lobby {
     }
 
     pub fn randomize_teams(&mut self, team_size: u8) {
-
         let mut rng = rng();
         let mut player_ids: Vec<String> = self.players.keys().cloned().collect();
         player_ids.shuffle(&mut rng);
@@ -141,10 +140,11 @@ impl Lobby {
         }
     }
 
-    //TODO for some reason the first seed it not random
     pub fn start_game(&mut self) {
         self.started = true;
-        if !self.lobby_options.different_seeds && self.lobby_options.custom_seed == String::from("random") {
+        if !self.lobby_options.different_seeds
+            && self.lobby_options.custom_seed == String::from("random")
+        {
             self.lobby_options.custom_seed = time_based_string(8);
             debug!(
                 "Generating time-based seed for lobby {} seed: {}",
@@ -236,6 +236,24 @@ impl Lobby {
                     (Vec::new(), self.players.keys().cloned().collect())
                 }
             }
+            GameMode::Clash => {
+                let mut sorted_players = self
+                    .players
+                    .iter()
+                    .collect::<Vec<(&String, &ClientLobbyEntry)>>();
+                sorted_players.sort_by(|a, b| b.1.game_state.score.cmp(&a.1.game_state.score));
+                let top_score = sorted_players[0].1.game_state.score.clone();
+                let mut winners = Vec::new();
+                let mut losers = Vec::new();
+                for (id, entry) in sorted_players {
+                    if entry.game_state.score == top_score {
+                        winners.push(id.clone());
+                    } else {
+                        losers.push(id.clone());
+                    }
+                }
+                (winners, losers)
+            }
 
             GameMode::Survival => {
                 //Compare furthest blind in games state of all players. player with furthest blind wins
@@ -255,19 +273,15 @@ impl Lobby {
                     .max()
                     .unwrap(); // Safe because we checked players.len() >= 2
 
-                let winners: Vec<String> = self
-                    .players
-                    .iter()
-                    .filter(|(_, p)| p.game_state.score == *top_score)
-                    .map(|(id, _)| id.clone())
-                    .collect();
-                let losers: Vec<String> = self
-                    .players
-                    .iter()
-                    .filter(|(_, p)| p.game_state.score != *top_score)
-                    .map(|(id, _)| id.clone())
-                    .collect();
-
+                let mut winners: Vec<String> = Vec::new();
+                let mut losers: Vec<String> = Vec::new();
+                for (player_id, player) in &self.players {
+                    if &player.game_state.score == top_score {
+                        winners.push(player_id.clone());
+                    } else {
+                        losers.push(player_id.clone());
+                    }
+                }
                 (winners, losers)
             }
         }

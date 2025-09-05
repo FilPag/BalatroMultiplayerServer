@@ -1,9 +1,10 @@
 use crate::actions::ServerToClient;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
+use std::sync::Arc;
 
 pub struct LobbyBroadcaster {
-    player_senders: HashMap<String, mpsc::UnboundedSender<ServerToClient>>,
+    player_senders: HashMap<String, mpsc::UnboundedSender<Arc<ServerToClient>>>,
 }
 
 impl LobbyBroadcaster {
@@ -13,7 +14,7 @@ impl LobbyBroadcaster {
         }
     }
 
-    pub fn add_player(&mut self, player_id: String, sender: mpsc::UnboundedSender<ServerToClient>) {
+    pub fn add_player(&mut self, player_id: String, sender: mpsc::UnboundedSender<Arc<ServerToClient>>) {
         self.player_senders.insert(player_id, sender);
     }
 
@@ -23,7 +24,7 @@ impl LobbyBroadcaster {
 
     pub fn send_to(&self, player_id: &str, response: ServerToClient) {
         if let Some(sender) = self.player_senders.get(player_id) {
-            let _ = sender.send(response);
+            let _ = sender.send(Arc::new(response));
         }
     }
 
@@ -32,9 +33,10 @@ impl LobbyBroadcaster {
     where
         F: Fn(&str) -> bool,
     {
+        let message = Arc::new(response);
         for (player_id, sender) in self.player_senders.iter(){
             if filter(player_id) {
-                let _ = sender.send(response.clone());
+                let _ = sender.send(Arc::clone(&message));
             }
         }
     }
