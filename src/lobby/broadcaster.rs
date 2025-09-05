@@ -1,4 +1,4 @@
-use crate::actions::ServerToClient;
+use crate::messages::ServerToClient;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use std::sync::Arc;

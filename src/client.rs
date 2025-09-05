@@ -1,5 +1,6 @@
-use crate::actions::{ClientToServer, ServerToClient};
-use crate::messages::{CoordinatorMessage, LobbyMessage};
+use crate::messages::{
+    ClientToServer, CoordinatorMessage, LobbyJoinData, LobbyMessage, ServerToClient,
+};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -53,12 +54,18 @@ impl Client {
     }
     pub fn send_to_lobby(
         &self,
-        message: LobbyMessage,
+        message: ClientToServer,
     ) -> Result<(), mpsc::error::SendError<LobbyMessage>> {
         if let Some(lobby_tx) = &self.lobby_channel {
-            lobby_tx.send(message)
+            lobby_tx.send(LobbyMessage::client_action(
+                self.profile.id.clone(),
+                message,
+            ))
         } else {
-            Err(mpsc::error::SendError(message))
+            Err(mpsc::error::SendError(LobbyMessage::client_action(
+                self.profile.id.clone(),
+                message,
+            )))
         }
     }
 }
@@ -90,9 +97,7 @@ impl std::error::Error for ReadActionError {}
 const MAX_MESSAGE_SIZE: usize = 256 * 1024; // 256 KiB safety cap
 
 // Read one action from the socket; uses '?' for IO steps
-async fn read_client_action(
-    reader: &mut OwnedReadHalf,
-) -> Result<ClientToServer, ReadActionError> {
+async fn read_client_action(reader: &mut OwnedReadHalf) -> Result<ClientToServer, ReadActionError> {
     let mut length_bytes = [0u8; 4];
     reader
         .read_exact(&mut length_bytes)
@@ -144,18 +149,14 @@ pub async fn handle_client(
     loop {
         match read_client_action(&mut reader).await {
             Ok(action) => {
-                if let Err(e) = handle_client_action(
-                    client_id.clone(),
-                    action,
-                    &mut client,
-                    &writer_tx,
-                )
-                .await
+                if let Err(e) =
+                    handle_client_action(client_id.clone(), action, &mut client, &writer_tx).await
                 {
                     error!("Action error for client {}: {}", client_id, e);
-                    let _ = writer_tx.send(
-                        Arc::new(ServerToClient::error(&format!("Action failed: {}", e))),
-                    );
+                    let _ = writer_tx.send(Arc::new(ServerToClient::error(&format!(
+                        "Action failed: {}",
+                        e
+                    ))));
                 }
             }
             Err(ReadActionError::EmptyFrame) => {
@@ -164,7 +165,10 @@ pub async fn handle_client(
                 continue;
             }
             Err(ReadActionError::Oversized { len, max }) => {
-                error!("Client {} sent oversized frame ({} > {})", client_id, len, max);
+                error!(
+                    "Client {} sent oversized frame ({} > {})",
+                    client_id, len, max
+                );
                 let _ = writer_tx.send(Arc::new(ServerToClient::error("Message too large")));
                 break; // Protocol abuse -> disconnect
             }
@@ -198,7 +202,6 @@ async fn handle_client_writer(
     mut rx: mpsc::UnboundedReceiver<Arc<ServerToClient>>,
 ) {
     while let Some(message) = rx.recv().await {
-
         // Send 4-byte length header + MessagePack data
         let buff = message.to_msgpack();
 
@@ -249,7 +252,7 @@ async fn handle_client_action(
             );
         }
         ClientToServer::CreateLobby { ruleset, game_mode } => {
-            let (tx, rx) = oneshot::channel::<LobbyMessage>();
+            let (tx, rx) = oneshot::channel::<LobbyJoinData>();
             client.send_to_coordinator(CoordinatorMessage::CreateLobby {
                 client_id,
                 ruleset,
@@ -259,24 +262,20 @@ async fn handle_client_action(
                 request_tx: tx,
             })?;
 
-            if let Ok(lobby_message) = rx.await {
-                match lobby_message {
-                    LobbyMessage::LobbyJoinData {
-                        lobby_code,
-                        lobby_tx,
-                    } => {
-                        client.lobby_channel = Some(lobby_tx);
-                        client.current_lobby = Some(lobby_code);
-                    }
-                    _ => {
-                        let error_response = Arc::new(ServerToClient::error("Failed to create lobby"));
-                        response_tx.send(error_response)?;
-                    }
-                }
+            if let Ok(LobbyJoinData {
+                lobby_code,
+                lobby_tx,
+            }) = rx.await
+            {
+                client.lobby_channel = Some(lobby_tx);
+                client.current_lobby = Some(lobby_code);
+            } else {
+                let error_response = Arc::new(ServerToClient::error("Failed to create lobby"));
+                response_tx.send(error_response)?;
             }
         }
         ClientToServer::JoinLobby { code } => {
-            let (tx, rx) = oneshot::channel::<LobbyMessage>();
+            let (tx, rx) = oneshot::channel::<LobbyJoinData>();
             client.send_to_coordinator(CoordinatorMessage::JoinLobby {
                 client_id,
                 lobby_code: code,
@@ -285,20 +284,16 @@ async fn handle_client_action(
                 request_tx: tx,
             })?;
 
-            if let Ok(lobby_message) = rx.await {
-                match lobby_message {
-                    LobbyMessage::LobbyJoinData {
-                        lobby_code,
-                        lobby_tx,
-                    } => {
-                        client.lobby_channel = Some(lobby_tx);
-                        client.current_lobby = Some(lobby_code);
-                    }
-                    _ => {
-                        let error_response = Arc::new(ServerToClient::error("Failed to join lobby"));
-                        response_tx.send(error_response)?;
-                    }
-                }
+            if let Ok(LobbyJoinData {
+                lobby_code,
+                lobby_tx,
+            }) = rx.await
+            {
+                client.lobby_channel = Some(lobby_tx);
+                client.current_lobby = Some(lobby_code);
+            } else {
+                let error_response = Arc::new(ServerToClient::error("Failed to join lobby"));
+                response_tx.send(error_response)?;
             }
         }
         ClientToServer::LeaveLobby {} => {
@@ -306,10 +301,7 @@ async fn handle_client_action(
             match client.lobby_channel.as_ref() {
                 Some(_) => {
                     if let Some(coordinator_tx) = client.coordinator_channel.clone() {
-                        client.send_to_lobby(LobbyMessage::LeaveLobby {
-                            player_id: client_id,
-                            coordinator_tx,
-                        })?;
+                        client.send_to_lobby(action)?;
                     } else {
                         error!(
                             "Coordinator channel missing for client {} when leaving lobby",
@@ -328,163 +320,8 @@ async fn handle_client_action(
             client.current_lobby = None;
             client.lobby_channel = None;
         }
-        ClientToServer::UpdateLobbyOptions { options } => {
-            client.send_to_lobby(LobbyMessage::UpdateLobbyOptions {
-                player_id: client_id,
-                options,
-            })?;
-        }
-        ClientToServer::SetReady { is_ready } => {
-            client.send_to_lobby(LobbyMessage::SetReady {
-                player_id: client_id,
-                is_ready,
-            })?;
-        }
-        ClientToServer::SetLocation { location } => {
-            client.send_to_lobby(LobbyMessage::SetLocation {
-                player_id: client_id,
-                location,
-            })?;
-        }
-        ClientToServer::StartGame { seed, stake } => {
-            client.send_to_lobby(LobbyMessage::StartGame {
-                player_id: client_id,
-                seed: seed.clone(),
-                stake: stake.clone(),
-            })?;
-        }
-        ClientToServer::StopGame {} => {
-            client.send_to_lobby(LobbyMessage::StopGame {
-                player_id: client_id,
-            })?;
-        }
-        ClientToServer::UpdateHandsAndDiscards {
-            hands_max,
-            discards_max,
-        } => {
-            client.send_to_lobby(LobbyMessage::UpdateHandsAndDiscards {
-                player_id: client_id,
-                hands_max,
-                discards_max,
-            })?;
-        }
-        ClientToServer::PlayHand { score, hands_left } => {
-            client.send_to_lobby(LobbyMessage::PlayHand {
-                player_id: client_id,
-                score,
-                hands_left,
-            })?;
-        }
-        ClientToServer::Discard {} => todo!(),
-        ClientToServer::SetBossBlind { key, chips } => {
-            client.send_to_lobby(LobbyMessage::SetBossBlind {
-                player_id: client_id,
-                key,
-                chips,
-            })?;
-        }
-        ClientToServer::Skip { blind } => {
-            client.send_to_lobby(LobbyMessage::Skip {
-                player_id: client_id,
-                blind,
-            })?;
-        }
-        ClientToServer::FailRound {} => {
-            client.send_to_lobby(LobbyMessage::FailRound {
-                player_id: client_id,
-            })?;
-        }
-        ClientToServer::SendPlayerDeck { deck } => {
-            client.send_to_lobby(LobbyMessage::SendPlayerDeck {
-                player_id: client_id,
-                deck,
-            })?;
-        }
-        ClientToServer::SendPhantom { key } => {
-            client.send_to_lobby(LobbyMessage::SendPhantom {
-                player_id: client_id,
-                key,
-            })?;
-        }
-        ClientToServer::RemovePhantom { key } => {
-            client.send_to_lobby(LobbyMessage::RemovePhantom {
-                player_id: client_id,
-                key,
-            })?;
-        }
-        ClientToServer::Asteroid { target } => {
-            client.send_to_lobby(LobbyMessage::Asteroid {
-                player_id: client_id,
-                target,
-            })?;
-        }
-        ClientToServer::LetsGoGamblingNemesis {} => {
-            client.send_to_lobby(LobbyMessage::LetsGoGamblingNemesis {
-                player_id: client_id,
-            })?;
-        }
-        ClientToServer::EatPizza { discards } => {
-            client.send_to_lobby(LobbyMessage::EatPizza {
-                player_id: client_id,
-                discards,
-            })?;
-        }
-        ClientToServer::SoldJoker {} => {
-            client.send_to_lobby(LobbyMessage::SoldJoker {
-                player_id: client_id,
-            })?;
-        }
-        ClientToServer::SpentLastShop { amount } => {
-            client.send_to_lobby(LobbyMessage::SpentLastShop {
-                player_id: client_id,
-                amount,
-            })?;
-        }
-        ClientToServer::Magnet {} => {
-            client.send_to_lobby(LobbyMessage::Magnet {
-                player_id: client_id,
-            })?;
-        }
-        ClientToServer::MagnetResponse { key } => {
-            client.send_to_lobby(LobbyMessage::MagnetResponse {
-                player_id: client_id,
-                key,
-            })?;
-        }
-        ClientToServer::SetFurthestBlind { blind } => {
-            client.send_to_lobby(LobbyMessage::SetFurthestBlind {
-                player_id: client_id,
-                blind,
-            })?;
-        }
-        ClientToServer::StartAnteTimer { time } => {
-            client.send_to_lobby(LobbyMessage::StartAnteTimer {
-                player_id: client_id,
-                time,
-            })?;
-        }
-        ClientToServer::PauseAnteTimer { time } => {
-            client.send_to_lobby(LobbyMessage::PauseAnteTimer {
-                player_id: client_id,
-                time,
-            })?;
-        }
-        ClientToServer::FailTimer {} => {
-            client.send_to_lobby(LobbyMessage::FailTimer {
-                player_id: client_id,
-            })?;
-        }
-        ClientToServer::SendPlayerJokers { jokers } => {
-            client.send_to_lobby(LobbyMessage::SendPlayerJokers {
-                player_id: client_id,
-                jokers,
-            })?;
-        }
-        ClientToServer::SendMoney { player_id } => {
-            client.send_to_lobby(LobbyMessage::SendMoney {
-                from: client_id.clone(),
-                to: player_id,
-            })?;
+        _ => {
+            client.send_to_lobby(action)?;
         }
     }
     Ok(())

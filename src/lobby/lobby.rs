@@ -1,6 +1,6 @@
 use super::{broadcaster::LobbyBroadcaster, game_state::ClientLobbyEntry};
 use crate::{
-    actions::ServerToClient,
+    messages::ServerToClient,
     client::ClientProfile,
     game_mode::{GameMode, LobbyOptions},
     talisman_number::TalismanNumber,

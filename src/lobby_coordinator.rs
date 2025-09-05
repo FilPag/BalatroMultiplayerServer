@@ -1,6 +1,8 @@
-use crate::actions::ServerToClient;
 use crate::lobby::lobby_task;
-use crate::messages::{CoordinatorMessage, LobbyMessage};
+use crate::messages::{
+    ClientJoinInfo, ClientToServer, CoordinatorMessage, LobbyExtra, LobbyJoinData, LobbyMessage,
+    ServerToClient,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -27,20 +29,19 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
                 let lobby_code = generate_lobby_code();
 
                 // Create the lobby task
-                let (lobby_tx, lobby_rx) = mpsc::unbounded_channel();
+                let (lobby_tx, lobby_rx) = mpsc::unbounded_channel::<LobbyMessage>();
                 lobby_senders.insert(lobby_code.clone(), lobby_tx.clone());
                 client_lobbies.insert(client_id.clone(), lobby_code.clone());
                 // Spawn the lobby task
                 tokio::spawn(lobby_task(lobby_code.clone(), lobby_rx, ruleset, game_mode));
 
-                let _ = lobby_tx.send(LobbyMessage::PlayerJoined {
-                    player_id: client_id,
-                    client_profile: client_profile.clone(),
-                    client_response_tx: client_response_tx.clone(),
-                });
-
+                let _ = lobby_tx.send(LobbyMessage::client_join(
+                    client_id.clone(),
+                    client_profile.clone(),
+                    client_response_tx.clone(),
+                ));
                 // Give client communication channel to lobby
-                let _ = request_tx.send(LobbyMessage::LobbyJoinData {
+                let _ = request_tx.send(LobbyJoinData {
                     lobby_code: lobby_code.clone(),
                     lobby_tx: lobby_tx.clone(),
                 });
@@ -55,26 +56,27 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
             } => {
                 if let Some(lobby_tx) = lobby_senders.get(&lobby_code) {
                     // Give client communication channel to lobby
-                    let _ = request_tx.send(LobbyMessage::LobbyJoinData {
+                    let _ = request_tx.send(LobbyJoinData {
                         lobby_code: lobby_code.clone(),
                         lobby_tx: lobby_tx.clone(),
                     });
                     // Try to forward to lobby task
-                    if let Err(_) = lobby_tx.send(LobbyMessage::PlayerJoined {
-                        player_id: client_id.clone(),
-                        client_profile: client_profile.clone(),
-                        client_response_tx: client_response_tx.clone(),
-                    }) {
+                    if let Err(_) = lobby_tx.send(LobbyMessage::client_join(
+                        client_id.clone(),
+                        client_profile.clone(),
+                        client_response_tx.clone(),
+                    )) {
                         // Failed to send to lobby, send error response
-                        let error_response = Arc::new(ServerToClient::error("Failed to join lobby"));
+                        let error_response =
+                            Arc::new(ServerToClient::error("Failed to join lobby"));
                         let _ = client_response_tx.send(error_response);
                     } else {
                         client_lobbies.insert(client_id.clone(), lobby_code.clone());
                     }
                 } else {
                     // Lobby doesn't exist
-                        let error_response = Arc::new(ServerToClient::error("Lobby does not exist"));
-                        let _ = client_response_tx.send(error_response);
+                    let error_response = Arc::new(ServerToClient::error("Lobby does not exist"));
+                    let _ = client_response_tx.send(error_response);
                 }
             }
 
@@ -88,9 +90,9 @@ pub async fn lobby_coordinator(mut rx: mpsc::UnboundedReceiver<CoordinatorMessag
             } => {
                 if let Some(lobby_code) = client_lobbies.remove(&client_id) {
                     if let Some(lobby_tx) = lobby_senders.get(&lobby_code) {
-                        let _ = lobby_tx.send(LobbyMessage::LeaveLobby {
-                            player_id: client_id,
-                            coordinator_tx,
+                        let _ = lobby_tx.send(LobbyMessage::ClientLeave {
+                            client_id: client_id.clone(),
+                            coordinator_tx: coordinator_tx.clone(),
                         });
                     }
                 }

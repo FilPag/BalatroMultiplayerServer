@@ -1,6 +1,6 @@
 use super::{broadcaster::LobbyBroadcaster, lobby::Lobby};
-use crate::actions::ServerToClient;
-use crate::talisman_number::TalismanNumber;
+use crate::messages::{ClientToServer, ServerToClient};
+use crate::{lobby::handlers, talisman_number::TalismanNumber};
 use tracing::{debug, error};
 
 // KISS: Group related handlers
@@ -23,7 +23,7 @@ impl LobbyHandlers {
         }
     }
 
-    pub fn handle_play_hand(
+    fn handle_play_hand(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
         player_id: &str,
@@ -54,7 +54,7 @@ impl LobbyHandlers {
         }
     }
 
-    pub fn handle_set_location(
+    fn handle_set_location(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
         player_id: &str,
@@ -65,19 +65,14 @@ impl LobbyHandlers {
         });
     }
 
-    pub fn handle_skip(
-        lobby: &mut Lobby,
-        broadcaster: &LobbyBroadcaster,
-        player_id: &str,
-        blind: u32,
-    ) {
+    fn handle_skip(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: &str, blind: u32) {
         Self::update_player_and_broadcast(lobby, broadcaster, player_id, false, |player| {
             player.game_state.skips += 1;
             player.game_state.furthest_blind = blind;
         });
     }
 
-    pub fn handle_update_hands_and_discards(
+    fn handle_update_hands_and_discards(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
         player_id: &str,
@@ -95,23 +90,20 @@ impl LobbyHandlers {
     }
 
     // Multiplayer joker handlers - these broadcast to other players
-    pub fn handle_send_phantom(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
+    fn handle_send_phantom(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
         debug!("Player {} sending phantom joker: {}", player_id, key);
         broadcaster.broadcast_except(
             player_id,
-            crate::actions::ServerToClient::SendPhantom { key },
+            crate::messages::ServerToClient::SendPhantom { key },
         );
     }
 
-    pub fn handle_remove_phantom(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
+    fn handle_remove_phantom(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
         debug!("Player {} removing phantom joker: {}", player_id, key);
-        broadcaster.broadcast_except(
-            player_id,
-            ServerToClient::RemovePhantom { key },
-        );
+        broadcaster.broadcast_except(player_id, ServerToClient::RemovePhantom { key });
     }
 
-    pub fn handle_asteroid(broadcaster: &LobbyBroadcaster, player_id: &str, target: &str) {
+    fn handle_asteroid(broadcaster: &LobbyBroadcaster, player_id: &str, target: &str) {
         debug!("Player {} sent asteroid to {}", player_id, target);
         broadcaster.send_to(
             player_id,
@@ -121,15 +113,12 @@ impl LobbyHandlers {
         );
     }
 
-    pub fn handle_lets_go_gambling_nemesis(broadcaster: &LobbyBroadcaster, player_id: &str) {
+    fn handle_lets_go_gambling_nemesis(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} triggered lets go gambling nemesis", player_id);
-        broadcaster.broadcast_except(
-            player_id,
-            ServerToClient::LetsGoGamblingNemesis {},
-        );
+        broadcaster.broadcast_except(player_id, ServerToClient::LetsGoGamblingNemesis {});
     }
 
-    pub fn set_furthest_blind(
+    fn set_furthest_blind(
         lobby: &mut Lobby,
         broadcaster: &LobbyBroadcaster,
         player_id: &str,
@@ -154,45 +143,45 @@ impl LobbyHandlers {
         }
     }
 
-    pub fn handle_eat_pizza(broadcaster: &LobbyBroadcaster, player_id: &str, discards: u8) {
+    fn handle_eat_pizza(broadcaster: &LobbyBroadcaster, player_id: &str, discards: u8) {
         debug!(
             "Player {} eating pizza for {} discards",
             player_id, discards
         );
         broadcaster.broadcast_except(
             player_id,
-            crate::actions::ServerToClient::EatPizza { discards },
+            crate::messages::ServerToClient::EatPizza { discards },
         );
     }
 
-    pub fn handle_sold_joker(broadcaster: &LobbyBroadcaster, player_id: &str) {
+    fn handle_sold_joker(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} sold a joker", player_id);
-        broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::SoldJoker {});
+        broadcaster.broadcast_except(player_id, crate::messages::ServerToClient::SoldJoker {});
     }
 
-    pub fn handle_spent_last_shop(broadcaster: &LobbyBroadcaster, player_id: &str, amount: u32) {
+    fn handle_spent_last_shop(broadcaster: &LobbyBroadcaster, player_id: &str, amount: u32) {
         //TODO fix the vector handling here
         debug!("Player {} spent {} in shop", player_id, amount);
-        broadcaster.broadcast(crate::actions::ServerToClient::SpentLastShop {
+        broadcaster.broadcast(crate::messages::ServerToClient::SpentLastShop {
             player_id: player_id.to_string(),
             amount,
         });
     }
 
-    pub fn handle_magnet(broadcaster: &LobbyBroadcaster, player_id: &str) {
+    fn handle_magnet(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} triggered magnet", player_id);
-        broadcaster.broadcast_except(player_id, crate::actions::ServerToClient::Magnet {});
+        broadcaster.broadcast_except(player_id, crate::messages::ServerToClient::Magnet {});
     }
 
-    pub fn handle_magnet_response(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
+    fn handle_magnet_response(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
         debug!("Player {} responding to magnet with: {}", player_id, key);
         broadcaster.broadcast_except(
             player_id,
-            crate::actions::ServerToClient::MagnetResponse { key },
+            crate::messages::ServerToClient::MagnetResponse { key },
         );
     }
 
-    pub fn handle_fail_timer(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: &str) {
+    fn handle_fail_timer(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} failed timer", player_id);
         lobby.apply_life_loss(player_id);
         lobby.broadcast_life_updates(broadcaster, player_id);
@@ -200,8 +189,170 @@ impl LobbyHandlers {
         if game_over {
             lobby.handle_game_end(broadcaster, &winners, &losers);
         }
-        broadcaster.broadcast(crate::actions::ServerToClient::PauseAnteTimer {
+        broadcaster.broadcast(crate::messages::ServerToClient::PauseAnteTimer {
             time: (lobby.lobby_options.timer_base_seconds),
         });
+    }
+
+    pub fn handle_player_action(
+        mut lobby: &mut Lobby,
+        broadcaster: &LobbyBroadcaster,
+        player_id: String,
+        action: ClientToServer,
+    ) {
+        debug!("Player {} performed action: {:?}", player_id, action);
+        match action {
+            ClientToServer::PlayHand { score, hands_left } => {
+                Self::handle_play_hand(&mut lobby, &broadcaster, &player_id, score, hands_left);
+            }
+            ClientToServer::SetLocation { location } => {
+                Self::handle_set_location(&mut lobby, &broadcaster, &player_id, location);
+            }
+            ClientToServer::Skip { blind } => {
+                Self::handle_skip(&mut lobby, &broadcaster, &player_id, blind);
+            }
+            ClientToServer::UpdateHandsAndDiscards {
+                hands_max,
+                discards_max,
+            } => {
+                Self::handle_update_hands_and_discards(
+                    &mut lobby,
+                    &broadcaster,
+                    &player_id,
+                    hands_max,
+                    discards_max,
+                );
+            }
+            ClientToServer::FailRound {} => {
+                lobby.handle_player_fail_round(&player_id, &broadcaster);
+            }
+            ClientToServer::UpdateLobbyOptions { options } => {
+                lobby.lobby_options = options;
+                lobby.reset_ready_states_to_host_only();
+                lobby.broadcast_ready_states_except(&broadcaster, &player_id);
+                broadcaster.broadcast_except(
+                    &player_id,
+                    ServerToClient::UpdateLobbyOptions {
+                        options: lobby.lobby_options.clone(),
+                    },
+                );
+            }
+            ClientToServer::StartGame { seed: _, stake } => {
+                if lobby.is_player_host(&player_id) {
+                    lobby.start_game();
+                    broadcaster.broadcast(ServerToClient::ResetPlayers {
+                        players: lobby.players().values().cloned().collect(),
+                    });
+                    broadcaster.broadcast(ServerToClient::GameStarted {
+                        seed: lobby.lobby_options.custom_seed.clone(),
+                        stake,
+                    });
+                    lobby.broadcast_ready_states(&broadcaster);
+                }
+            }
+            ClientToServer::StopGame {} => {
+                lobby.reset_game_states();
+                lobby.started = false;
+                lobby.lobby_options.custom_seed = String::from("random");
+
+                broadcaster.broadcast(ServerToClient::GameStopped {});
+                lobby.reset_ready_states_to_host_only();
+                lobby.broadcast_ready_states(&broadcaster);
+            }
+            ClientToServer::SetReady { is_ready } => {
+                lobby.set_player_ready(&player_id, is_ready);
+                if lobby.started {
+                    let all_ready = lobby.players().values().all(|p| p.lobby_state.is_ready);
+                    if all_ready {
+                        lobby.start_online_blind(&broadcaster);
+                    }
+                } else {
+                    lobby.broadcast_ready_states_except(&broadcaster, &player_id);
+                }
+            }
+            ClientToServer::SetBossBlind { key, chips } => {
+                if lobby.is_player_host(&player_id) {
+                    debug!(
+                        "Got SetBossBlind key: {}, chips: {}",
+                        key,
+                        chips.to_string()
+                    );
+                    lobby.boss_chips = chips;
+                    broadcaster.broadcast_except(&player_id, ServerToClient::SetBossBlind { key });
+                }
+            }
+            ClientToServer::SendPlayerDeck { deck } => {
+                broadcaster.broadcast(ServerToClient::ReceivePlayerDeck {
+                    player_id: player_id.clone(),
+                    deck,
+                });
+            }
+            ClientToServer::SendPhantom { key } => {
+                Self::handle_send_phantom(&broadcaster, &player_id, key);
+            }
+            ClientToServer::RemovePhantom { key } => {
+                Self::handle_remove_phantom(&broadcaster, &player_id, key);
+            }
+            ClientToServer::Asteroid { target } => {
+                Self::handle_asteroid(&broadcaster, &target, &player_id);
+            }
+            ClientToServer::LetsGoGamblingNemesis {} => {
+                Self::handle_lets_go_gambling_nemesis(&broadcaster, &player_id);
+            }
+            ClientToServer::EatPizza { discards } => {
+                Self::handle_eat_pizza(&broadcaster, &player_id, discards);
+            }
+            ClientToServer::SoldJoker {} => {
+                Self::handle_sold_joker(&broadcaster, &player_id);
+            }
+            ClientToServer::SpentLastShop { amount } => {
+                Self::handle_spent_last_shop(&broadcaster, &player_id, amount);
+            }
+            ClientToServer::Magnet {} => {
+                Self::handle_magnet(&broadcaster, &player_id);
+            }
+            ClientToServer::MagnetResponse { key } => {
+                Self::handle_magnet_response(&broadcaster, &player_id, key);
+            }
+            ClientToServer::SetFurthestBlind { blind } => {
+                Self::set_furthest_blind(&mut lobby, &broadcaster, &player_id, blind);
+            }
+            ClientToServer::StartAnteTimer { time } => {
+                debug!(
+                    "Starting ante timer in lobby {} with time: {}",
+                    lobby.code, time
+                );
+                broadcaster.broadcast_except(&player_id, ServerToClient::StartAnteTimer { time });
+            }
+            ClientToServer::PauseAnteTimer { time } => {
+                debug!(
+                    "Pausing ante timer in lobby {} with time: {}",
+                    lobby.code, time
+                );
+                broadcaster.broadcast_except(&player_id, ServerToClient::PauseAnteTimer { time });
+            }
+            ClientToServer::FailTimer {} => {
+                LobbyHandlers::handle_fail_timer(&mut lobby, &broadcaster, &player_id);
+            }
+            ClientToServer::SendPlayerJokers { jokers } => {
+                debug!("Sending jokers for player {}: {}", player_id, jokers);
+                broadcaster.broadcast_except(
+                    &player_id,
+                    ServerToClient::ReceivePlayerJokers {
+                        player_id: player_id.clone(),
+                        jokers,
+                    },
+                );
+            }
+            ClientToServer::SendMoney {
+                player_id: target_player_id,
+            } => {
+                broadcaster.send_to(&target_player_id, ServerToClient::ReceivedMoney {});
+            }
+            ClientToServer::Discard {} => todo!(),
+            other => {
+                debug!("Unhandled action from player {}: {:?}", player_id, other);
+            }
+        }
     }
 }
