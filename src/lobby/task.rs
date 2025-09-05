@@ -91,6 +91,7 @@ pub async fn lobby_task(
                 let player_left_response =
                     ServerToClient::player_left_lobby(client_id.clone(), host_id.clone());
                 broadcaster.broadcast(player_left_response);
+                lobby.started = false;
 
                 debug!("Player {} left lobby {}", client_id, lobby.code);
             }

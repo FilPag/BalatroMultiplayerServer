@@ -183,7 +183,7 @@ impl LobbyHandlers {
 
     fn handle_fail_timer(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} failed timer", player_id);
-        lobby.apply_life_loss(player_id);
+        lobby.apply_life_loss(&vec![player_id.to_string()]);
         lobby.broadcast_life_updates(broadcaster, player_id);
         let (game_over, winners, losers) = lobby.check_game_over();
         if game_over {

@@ -1,8 +1,8 @@
 use super::{broadcaster::LobbyBroadcaster, game_state::ClientLobbyEntry};
 use crate::{
-    messages::ServerToClient,
     client::ClientProfile,
-    game_mode::{GameMode, LobbyOptions},
+    game_mode::{CLASH_BASE_DAMAGE, GameMode, LobbyOptions},
+    messages::ServerToClient,
     talisman_number::TalismanNumber,
     utils::time_based_string,
 };
@@ -18,6 +18,7 @@ pub struct Lobby {
     pub started: bool,
     pub boss_chips: TalismanNumber,
     pub lobby_options: LobbyOptions,
+    stage: i32,
     players: HashMap<String, ClientLobbyEntry>,
     max_players: u8,
 }
@@ -32,13 +33,9 @@ impl Lobby {
             boss_chips: TalismanNumber::Regular(0.0),
             lobby_options: new_gamemode,
             players: HashMap::new(),
+            stage: 0,
             max_players: game_mode.get_max_players(),
         }
-    }
-
-    // KISS: Simple accessors
-    pub fn get_player(&self, player_id: &str) -> Option<&ClientLobbyEntry> {
-        self.players.get(player_id)
     }
 
     pub fn get_player_mut(&mut self, player_id: &str) -> Option<&mut ClientLobbyEntry> {
@@ -69,7 +66,6 @@ impl Lobby {
         }
     }
 
-    // DRY: Extract common player operations
     pub fn add_player(
         &mut self,
         player_id: String,
@@ -187,7 +183,7 @@ impl Lobby {
         debug!("Evaluating online battle for lobby {}", self.code);
 
         let (winners, losers) = self.check_round_victory();
-        self.apply_round_results(&losers);
+        self.apply_life_loss(&losers);
         self.broadcast_all_game_states(broadcaster);
 
         // Use unified game over check
@@ -212,7 +208,7 @@ impl Lobby {
         debug!("Player {} failed a round in lobby {}", player_id, self.code);
 
         if self.lobby_options.death_on_round_loss {
-            self.apply_life_loss(player_id);
+            self.apply_life_loss(&vec![player_id.to_string()]);
         }
 
         self.broadcast_life_updates(broadcaster, player_id);
@@ -307,24 +303,32 @@ impl Lobby {
         }
     }
 
-    fn apply_round_results(&mut self, losers: &[String]) {
-        for loser in losers {
-            if let Some(player) = self.players.get_mut(loser) {
-                player.game_state.lives = player.game_state.lives.saturating_sub(1);
-            }
+    pub fn apply_life_loss(&mut self, losers: &[String]) {
+        if losers.is_empty() {
+            return;
         }
-    }
 
-    pub fn apply_life_loss(&mut self, player_id: &str) {
         match self.lobby_options.gamemode {
             GameMode::CoopSurvival => {
                 for player in self.players.values_mut() {
                     player.game_state.lives = player.game_state.lives.saturating_sub(1);
                 }
             }
+            GameMode::Clash => {
+                for (i, loser_id) in losers.iter().enumerate() {
+                    if let Some(player) = self.players.get_mut(loser_id) {
+                        let damage = CLASH_BASE_DAMAGE[self.stage as usize] + (i as u8) + 1;
+                        player.game_state.lives = player.game_state.lives.saturating_sub(damage);
+                    }
+                }
+
+                self.stage += 1;
+            }
             _ => {
-                if let Some(player) = self.players.get_mut(player_id) {
-                    player.game_state.lives = player.game_state.lives.saturating_sub(1);
+                for loser_id in losers {
+                    if let Some(player) = self.players.get_mut(loser_id) {
+                        player.game_state.lives = player.game_state.lives.saturating_sub(1);
+                    }
                 }
             }
         }

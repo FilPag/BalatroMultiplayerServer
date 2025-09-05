@@ -173,6 +173,8 @@ static COOP_SURVIVAL_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeDat
     },
 });
 
+pub const CLASH_BASE_DAMAGE: [u8; 8] = [0, 2, 5, 8, 10, 12, 17, 100];
+
 static CLASH_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
     max_players: 6,
     default_options: LobbyOptions {
