@@ -248,21 +248,31 @@ impl LobbyHandlers {
                         stake,
                     });
                     lobby.broadcast_ready_states(&broadcaster);
+                    broadcaster.broadcast(ServerToClient::InGameStatuses {
+                        statuses: lobby.get_in_game_statuses(),
+                    });
                 }
             }
             ClientToServer::StopGame {} => {
-                lobby.reset_game_states();
                 lobby.started = false;
+                lobby.reset_game_states(false);
                 lobby.lobby_options.custom_seed = String::from("random");
 
                 broadcaster.broadcast(ServerToClient::GameStopped {});
                 lobby.reset_ready_states_to_host_only();
                 lobby.broadcast_ready_states(&broadcaster);
+                broadcaster.broadcast(ServerToClient::InGameStatuses {
+                    statuses: lobby.get_in_game_statuses(),
+                });
             }
             ClientToServer::SetReady { is_ready } => {
                 lobby.set_player_ready(&player_id, is_ready);
                 if lobby.started {
-                    let all_ready = lobby.players().values().all(|p| p.lobby_state.is_ready);
+                    let all_ready = lobby
+                        .players()
+                        .values()
+                        .filter(|p| p.lobby_state.in_game)
+                        .all(|p| p.lobby_state.is_ready);
                     if all_ready {
                         lobby.start_online_blind(&broadcaster);
                     }

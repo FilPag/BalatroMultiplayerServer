@@ -130,9 +130,10 @@ impl Lobby {
     }
 
     // Game state management
-    pub fn reset_game_states(&mut self) {
+    pub fn reset_game_states(&mut self, in_game: bool) {
         for player in self.players.values_mut() {
             player.reset_for_game(self.lobby_options.starting_lives);
+            player.lobby_state.in_game = in_game;
         }
     }
 
@@ -147,7 +148,14 @@ impl Lobby {
                 self.code, self.lobby_options.custom_seed
             );
         }
-        self.reset_game_states();
+        self.reset_game_states(true);
+    }
+
+    pub fn stop_game(&mut self) {
+        self.started = false;
+        self.reset_game_states(false);
+        self.stage = 0;
+        self.boss_chips = TalismanNumber::Regular(0.0);
     }
 
     pub fn reset_scores(&mut self) {
@@ -167,7 +175,10 @@ impl Lobby {
     }
 
     pub fn all_players_done(&self) -> bool {
-        self.players.values().all(|p| p.game_state.hands_left == 0)
+        self.players
+            .values()
+            .filter(|p| p.lobby_state.in_game)
+            .all(|p| p.game_state.hands_left == 0)
     }
 
     pub fn is_someone_dead(&self) -> bool {
@@ -236,6 +247,7 @@ impl Lobby {
                 let mut sorted_players = self
                     .players
                     .iter()
+                    .filter(|(_, p)| p.lobby_state.in_game)
                     .collect::<Vec<(&String, &ClientLobbyEntry)>>();
                 sorted_players.sort_by(|a, b| b.1.game_state.score.cmp(&a.1.game_state.score));
                 let top_score = sorted_players[0].1.game_state.score.clone();
@@ -321,7 +333,6 @@ impl Lobby {
                         player.game_state.lives = player.game_state.lives.saturating_sub(damage);
                     }
                 }
-
                 self.stage += 1;
             }
             _ => {
@@ -478,7 +489,6 @@ impl Lobby {
         (winners, losers)
     }
 
-    /// Unified game over check for all game modes
     /// Returns (is_game_over, winners, losers)
     pub fn check_game_over(&self) -> (bool, Vec<String>, Vec<String>) {
         match self.lobby_options.gamemode {
@@ -499,6 +509,15 @@ impl Lobby {
                     (false, Vec::new(), Vec::new())
                 }
             }
+            GameMode::Clash => {
+                // Game over if any player is dead
+                if self.is_someone_dead() {
+                    let (winners, losers) = self.determine_game_end_results();
+                    (true, winners, losers)
+                } else {
+                    (false, Vec::new(), Vec::new())
+                }
+            }
             _ => {
                 // Standard PvP modes - game over if someone is dead
                 if self.is_someone_dead() {
@@ -509,6 +528,20 @@ impl Lobby {
                 }
             }
         }
+    }
+
+    pub fn get_in_game_statuses(&self) -> HashMap<String, bool> {
+        self.players
+            .iter()
+            .map(|(id, entry)| (id.clone(), entry.lobby_state.in_game))
+            .collect()
+    }
+
+    pub fn get_player_count_in_game(&self) -> usize {
+        self.players
+            .values()
+            .filter(|p| p.lobby_state.in_game)
+            .count()
     }
 
     pub fn check_survival_furthest_blind_win(

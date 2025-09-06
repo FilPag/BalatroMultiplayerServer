@@ -301,7 +301,10 @@ async fn handle_client_action(
             match client.lobby_channel.as_ref() {
                 Some(_) => {
                     if let Some(coordinator_tx) = client.coordinator_channel.clone() {
-                        client.send_to_lobby(action)?;
+                        client.send_to_coordinator(CoordinatorMessage::ClientDisconnected {
+                            client_id: client_id.clone(),
+                            coordinator_tx: coordinator_tx.clone(),
+                        })?;
                     } else {
                         error!(
                             "Coordinator channel missing for client {} when leaving lobby",

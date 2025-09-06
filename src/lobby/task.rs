@@ -35,11 +35,7 @@ pub async fn lobby_task(
                 client_profile,
                 client_response_tx,
             } => {
-                if lobby.started {
-                    let _ = client_response_tx.send(Arc::new(ServerToClient::Error {
-                        message: String::from("Lobby is already started"),
-                    }));
-                } else if lobby.is_full() {
+                if lobby.is_full() {
                     let _ = client_response_tx.send(Arc::new(ServerToClient::Error {
                         message: String::from("Lobby is full"),
                     }));
@@ -91,7 +87,11 @@ pub async fn lobby_task(
                 let player_left_response =
                     ServerToClient::player_left_lobby(client_id.clone(), host_id.clone());
                 broadcaster.broadcast(player_left_response);
-                lobby.started = false;
+
+                if lobby.started && lobby.get_player_count_in_game() < 2 {
+                    lobby.stop_game();
+                    broadcaster.broadcast(ServerToClient::GameStopped {});
+                }
 
                 debug!("Player {} left lobby {}", client_id, lobby.code);
             }

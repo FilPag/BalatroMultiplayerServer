@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct ClientLobbyState {
     pub current_lobby: Option<String>,
     pub is_ready: bool,
+    pub in_game: bool,
     pub first_ready: bool,
     pub is_cached: bool,
     pub is_host: bool,
@@ -41,7 +42,7 @@ impl Default for ClientGameState {
             discards_max: 3,
             lives: 2,
             lives_blocker: false,
-            location: String::from("loc_selecting"),
+            location: String::from("loc_waiting_in_lobby"),
             skips: 0,
             score: TalismanNumber::Regular(0.0),
             highest_score: TalismanNumber::Regular(0.0),
@@ -69,6 +70,7 @@ impl ClientLobbyEntry {
             lobby_state: ClientLobbyState {
                 current_lobby: Some(lobby_code),
                 is_ready: is_host, // Host starts ready
+                in_game: false,
                 first_ready: false,
                 is_cached: false,
                 is_host,
