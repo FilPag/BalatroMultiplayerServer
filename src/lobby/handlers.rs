@@ -1,4 +1,5 @@
 use super::{broadcaster::LobbyBroadcaster, lobby::Lobby};
+use crate::lobby::lobby::RoundResult;
 use crate::messages::{ClientToServer, ServerToClient};
 use crate::{lobby::handlers, talisman_number::TalismanNumber};
 use tracing::{debug, error};
@@ -135,10 +136,7 @@ impl LobbyHandlers {
 
             // Check for survival mode game end condition
             if lobby.lobby_options.gamemode == crate::game_mode::GameMode::Survival {
-                let game_ended = lobby.check_survival_furthest_blind_win(broadcaster, player_id);
-                if game_ended {
-                    return;
-                }
+                lobby.check_and_handle_game_over(broadcaster);
             }
         }
     }
@@ -162,7 +160,7 @@ impl LobbyHandlers {
     fn handle_spent_last_shop(broadcaster: &LobbyBroadcaster, player_id: &str, amount: u32) {
         //TODO fix the vector handling here
         debug!("Player {} spent {} in shop", player_id, amount);
-        broadcaster.broadcast(crate::messages::ServerToClient::SpentLastShop {
+        broadcaster.broadcast(ServerToClient::SpentLastShop {
             player_id: player_id.to_string(),
             amount,
         });
@@ -170,26 +168,26 @@ impl LobbyHandlers {
 
     fn handle_magnet(broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} triggered magnet", player_id);
-        broadcaster.broadcast_except(player_id, crate::messages::ServerToClient::Magnet {});
+        broadcaster.broadcast_except(player_id, ServerToClient::Magnet {});
     }
 
     fn handle_magnet_response(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
         debug!("Player {} responding to magnet with: {}", player_id, key);
         broadcaster.broadcast_except(
             player_id,
-            crate::messages::ServerToClient::MagnetResponse { key },
+            ServerToClient::MagnetResponse { key },
         );
     }
 
     fn handle_fail_timer(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: &str) {
         debug!("Player {} failed timer", player_id);
-        lobby.apply_life_loss(&vec![player_id.to_string()]);
+        lobby.process_round_outcome(&vec![RoundResult {
+            player_id: player_id.to_string(),
+            won: true,
+        }]);
         lobby.broadcast_life_updates(broadcaster, player_id);
-        let (game_over, winners, losers) = lobby.check_game_over();
-        if game_over {
-            lobby.handle_game_end(broadcaster, &winners, &losers);
-        }
-        broadcaster.broadcast(crate::messages::ServerToClient::PauseAnteTimer {
+        lobby.check_and_handle_game_over(broadcaster);
+        broadcaster.broadcast(ServerToClient::PauseAnteTimer {
             time: (lobby.lobby_options.timer_base_seconds),
         });
     }

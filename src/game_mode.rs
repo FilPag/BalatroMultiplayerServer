@@ -194,7 +194,7 @@ static CLASH_DATA: LazyLock<GameModeData> = LazyLock::new(|| GameModeData {
         pvp_start_round: 1,
         showdown_starting_antes: 1,
         stake: 1,
-        starting_lives: 1,
+        starting_lives: 50,
         timer_base_seconds: 150,
         timer_increment_seconds: 60,
     },

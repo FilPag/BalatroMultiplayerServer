@@ -45,6 +45,11 @@ impl LobbyBroadcaster {
         self.broadcast_to_filtered(response, |_| true);
     }
 
+    pub fn broadcast_to(&self, player_ids: &[String], response: ServerToClient) {
+        let id_set: std::collections::HashSet<_> = player_ids.iter().collect();
+        self.broadcast_to_filtered(response, |id| id_set.contains(&id.to_string()));
+    }
+
     pub fn broadcast_except(&self, except: &str, response: ServerToClient) {
         self.broadcast_to_filtered(response, |id| id != except);
     }
