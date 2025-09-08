@@ -1,6 +1,6 @@
 # 🃏 Coop Balatro Multiplayer Server
 
-> **Note:**  
+> [!NOTE]  
 > Client mod:  
 > See [FilPag/BalatroMultiplayer](https://github.com/FilPag/BalatroMultiplayer)
 
