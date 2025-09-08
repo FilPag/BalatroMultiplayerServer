@@ -1,4 +1,8 @@
-# 🃏 BalatroMultiplayerServer
+# 🃏 Coop Balatro Multiplayer Server
+
+> **Note:**  
+> Client mod:  
+> See [FilPag/BalatroMultiplayer](https://github.com/FilPag/BalatroMultiplayer)
 
 This server is a fork/re-design of [@Balatro-Multiplayer/BalatroMultiplayerAPI-Server](https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI-Server), rebuilt from scratch in **Rust** for multiplayer Balatro sessions.
 
