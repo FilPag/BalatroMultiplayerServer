@@ -173,10 +173,7 @@ impl LobbyHandlers {
 
     fn handle_magnet_response(broadcaster: &LobbyBroadcaster, player_id: &str, key: String) {
         debug!("Player {} responding to magnet with: {}", player_id, key);
-        broadcaster.broadcast_except(
-            player_id,
-            ServerToClient::MagnetResponse { key },
-        );
+        broadcaster.broadcast_except(player_id, ServerToClient::MagnetResponse { key });
     }
 
     fn handle_fail_timer(lobby: &mut Lobby, broadcaster: &LobbyBroadcaster, player_id: &str) {
@@ -225,6 +222,14 @@ impl LobbyHandlers {
                 lobby.handle_player_fail_round(&player_id, &broadcaster);
             }
             ClientToServer::UpdateLobbyOptions { options } => {
+                if !lobby.is_player_host(&player_id) {
+                    debug!(
+                        "Player {} attempted to update lobby options but is not host",
+                        player_id
+                    );
+                    return;
+                }
+
                 lobby.lobby_options = options;
                 lobby.reset_ready_states_to_host_only();
                 lobby.broadcast_ready_states_except(&broadcaster, &player_id);

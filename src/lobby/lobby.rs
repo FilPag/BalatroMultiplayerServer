@@ -10,7 +10,6 @@ use rand::rng;
 use rand::seq::SliceRandom;
 use serde::Serialize;
 use std::{collections::HashMap, result};
-use tokio::sync::broadcast;
 use tracing::{debug, error};
 
 #[derive(Debug)]
@@ -153,6 +152,7 @@ impl Lobby {
 
     pub fn start_game(&mut self) {
         self.started = true;
+        self.stage = 0;
         if !self.lobby_options.different_seeds
             && self.lobby_options.custom_seed == String::from("random")
         {
@@ -205,7 +205,10 @@ impl Lobby {
         debug!("Player {} failed a round in lobby {}", player_id, self.code);
 
         if self.lobby_options.death_on_round_loss {
-            self.process_round_outcome(&vec![]);
+            self.process_round_outcome(&vec![RoundResult {
+                player_id: player_id.to_string(),
+                won: false,
+            }]);
         }
         self.broadcast_life_updates(broadcaster, player_id);
 
