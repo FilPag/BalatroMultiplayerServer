@@ -357,6 +357,23 @@ impl LobbyHandlers {
                     },
                 );
             }
+            ClientToServer::ReturnToLobby {} => {
+                lobby.set_player_ready(&player_id, false);
+                lobby
+                    .get_player_mut(&player_id)
+                    .map(|p| p.lobby_state.in_game = false);
+
+                if lobby.get_player_count_in_game() == 0 && lobby.started {
+                    lobby.started = false;
+                    lobby.reset_game_states(false);
+                    broadcaster.broadcast(ServerToClient::GameStopped {});
+                    lobby.reset_ready_states_to_host_only();
+                }
+                lobby.broadcast_ready_states(&broadcaster);
+                broadcaster.broadcast(ServerToClient::InGameStatuses {
+                    statuses: lobby.get_in_game_statuses(),
+                });
+            }
             ClientToServer::SendMoney {
                 player_id: target_player_id,
             } => {

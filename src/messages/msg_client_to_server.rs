@@ -118,4 +118,7 @@ pub enum ClientToServer {
     #[serde(rename = "sendMoney")]
     SendMoney { player_id: String },
 
+    #[serde(rename = "return_to_lobby")]
+    ReturnToLobby {},
+
 }
