@@ -12,6 +12,7 @@ mod lobby_coordinator;
 mod messages;
 mod talisman_number;
 mod utils;
+mod test_utils;
 
 use crate::client::handle_client;
 use crate::lobby_coordinator::lobby_coordinator;

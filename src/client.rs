@@ -18,6 +18,17 @@ pub struct ClientProfile {
     pub colour: u8, // 0-255 instead of string
     pub mod_hash: String,
 }
+impl Default for ClientProfile {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            username: "Guest".to_string(),
+            colour: 0,
+            mod_hash: "".to_string(),
+        }
+    }
+    
+}
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -335,10 +346,7 @@ mod tests{
     use super::*;
     use tokio;
     use std::sync::Arc;
-
-    fn contains_response_of_type(responses: &[Arc<ServerToClient>], variant: &ServerToClient) -> bool {
-        responses.iter().any(|msg| std::mem::discriminant(&**msg) == std::mem::discriminant(variant))
-    }
+    use crate::test_utils::contains_response_of_type;
 
     async fn test_handle_client_action_helper_async(action: ClientToServer) -> (Client, Vec<Arc<ServerToClient>>) {
         let mut client = Client::new(None);
@@ -361,7 +369,7 @@ mod tests{
     #[tokio::test]
     async fn test_handle_client_action_version() {
         let (_client, responses) = test_handle_client_action_helper_async(ClientToServer::Version { version: "1.0.0".to_string() }).await;
-        assert!(contains_response_of_type(&responses, &ServerToClient::VersionOk {}));
+        assert!(contains_response_of_type::<ServerToClient>(&responses, &ServerToClient::VersionOk {}));
     }
 
     #[tokio::test]
