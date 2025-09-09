@@ -78,11 +78,13 @@ pub fn handle_client_join(
         }));
         return;
     }
+    let lobby_entry = lobby.add_player(client_id.clone(), client_profile.clone());
     broadcaster.add_player(client_id.clone(), client_response_tx);
+
     if lobby.players().len() == 1 {
         *host_id = client_id.clone();
     }
-    let lobby_entry = lobby.add_player(client_id.clone(), client_profile.clone());
+
     let player_joined_response = ServerToClient::player_joined_lobby(lobby_entry);
     let joined_response = ServerToClient::joined_lobby(client_id.clone(), lobby.clone());
 
@@ -100,18 +102,18 @@ pub fn handle_client_leave(
 ) -> bool {
     debug!("Player {} leaving lobby {}", client_id, lobby.code);
     broadcaster.remove_player(&client_id);
-    let leaving_player = lobby.remove_player(&client_id);
+    let Some(leaving_player) = lobby.remove_player(&client_id) else {
+        return false;
+    };
     if lobby.players().is_empty() {
         let _ = coordinator_tx.send(CoordinatorMessage::LobbyShutdown {
             lobby_code: lobby.code.clone(),
         });
         return true; // signal shutdown
     }
-    if let Some(player) = leaving_player {
-        if player.lobby_state.is_host {
-            if let Some(new_host_id) = lobby.promote_new_host() {
-                *host_id = new_host_id;
-            }
+    if leaving_player.lobby_state.is_host {
+        if let Some(new_host_id) = lobby.promote_new_host() {
+            *host_id = new_host_id;
         }
     }
     let player_left_response =
