@@ -72,7 +72,7 @@ pub enum ServerToClient {
     LobbyReady { ready_states: HashMap<String, bool> },
 
     #[serde(rename = "inGameStatuses")]
-    InGameStatuses { statuses: HashMap<String, bool> },
+    InGameStatuses { statuses: HashMap<String, bool>, started: bool },
 
     // Multiplayer joker responses
     #[serde(rename = "sendPhantom")]

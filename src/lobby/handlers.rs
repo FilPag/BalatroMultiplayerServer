@@ -253,6 +253,7 @@ impl LobbyHandlers {
                     lobby.broadcast_ready_states(&broadcaster);
                     broadcaster.broadcast(ServerToClient::InGameStatuses {
                         statuses: lobby.get_in_game_statuses(),
+                        started: lobby.started,
                     });
                 }
             }
@@ -266,6 +267,7 @@ impl LobbyHandlers {
                 lobby.broadcast_ready_states(&broadcaster);
                 broadcaster.broadcast(ServerToClient::InGameStatuses {
                     statuses: lobby.get_in_game_statuses(),
+                    started: lobby.started,
                 });
             }
             ClientToServer::SetReady { is_ready } => {
@@ -390,6 +392,7 @@ impl LobbyHandlers {
                 lobby.broadcast_ready_states(&broadcaster);
                 broadcaster.broadcast(ServerToClient::InGameStatuses {
                     statuses: lobby.get_in_game_statuses(),
+                    started: lobby.started,
                 });
             }
             ClientToServer::SendMoney {

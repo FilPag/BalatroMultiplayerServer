@@ -229,17 +229,19 @@ impl Lobby {
 
         // Use unified game over check
         let game_over = self.check_and_handle_game_over(broadcaster);
-        if game_over == false {
-            self.reset_scores();
-            self.broadcast_end_round_results(broadcaster, &result);
-        } else {
-            self.reset_ready_states_to_host_only();
-            self.broadcast_ready_states(broadcaster);
+        if game_over {
             self.started = false;
+            self.reset_ready_states_to_host_only();
+        } else {
+            self.reset_scores();
+            self.reset_ready_states();
+            self.broadcast_end_round_results(broadcaster, &result);
         }
+        self.broadcast_ready_states(broadcaster);
         self.broadcast_all_game_states(broadcaster);
         broadcaster.broadcast(ServerToClient::InGameStatuses {
             statuses: self.get_in_game_statuses(),
+            started: self.started,
         });
     }
 
