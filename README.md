@@ -10,7 +10,7 @@ This server is a fork/re-design of [@Balatro-Multiplayer/BalatroMultiplayerAPI-S
 - **Scalable & Concurrent**: Uses Tokio to efficiently handle many simultaneous players and games.
 - **New Gamemodes**:
   - **Clash**: Up to 8 players face off in a battle-royale style poker showdown.
-  - **Coop**: Work together with friends to chase high scores and wild combos.
+  - **Coop**: Work together with friends to chase high scores.
 
 ## 🛠 Features
 
