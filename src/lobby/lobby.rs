@@ -394,9 +394,9 @@ impl Lobby {
                 }
 
                 broadcaster.broadcast_to(&dead_players, ServerToClient::LoseGame {});
-                // for each dead player set their lobby_state.in_game to false
+
                 if alive_players.len() == 1 {
-                    broadcaster.broadcast_to(&alive_players, ServerToClient::WinGame {});
+                    broadcaster.send_to(&alive_players[0], ServerToClient::WinGame {});
                     return true;
                 }
 
