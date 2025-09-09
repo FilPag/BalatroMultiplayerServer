@@ -329,3 +329,61 @@ async fn handle_client_action(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use tokio;
+    use std::sync::Arc;
+
+    fn contains_response_of_type(responses: &[Arc<ServerToClient>], variant: &ServerToClient) -> bool {
+        responses.iter().any(|msg| std::mem::discriminant(&**msg) == std::mem::discriminant(variant))
+    }
+
+    async fn test_handle_client_action_helper_async(action: ClientToServer) -> (Client, Vec<Arc<ServerToClient>>) {
+        let mut client = Client::new(None);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let client_id = client.profile.id.clone();
+        let _ = handle_client_action(client_id, action, &mut client, &tx).await;
+        let mut responses = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            responses.push(msg);
+        }
+        (client, responses)
+    }
+
+    #[tokio::test]
+    async fn test_handle_client_action_keepalive() {
+        let (_client, responses) = test_handle_client_action_helper_async(ClientToServer::KeepAlive {}).await;
+        assert!(contains_response_of_type(&responses, &ServerToClient::KeepAliveResponse {}));
+    }
+
+    #[tokio::test]
+    async fn test_handle_client_action_version() {
+        let (_client, responses) = test_handle_client_action_helper_async(ClientToServer::Version { version: "1.0.0".to_string() }).await;
+        assert!(contains_response_of_type(&responses, &ServerToClient::VersionOk {}));
+    }
+
+    #[tokio::test]
+    async fn test_handle_client_action_set_client_data() {
+        let (client, _responses) = test_handle_client_action_helper_async(ClientToServer::SetClientData {
+            username: "Alice".to_string(),
+            colour: 42,
+            mod_hash: "abc123".to_string(),
+        }).await;
+        assert_eq!(client.profile.username, "Alice");
+        assert_eq!(client.profile.colour, 42);
+        assert_eq!(client.profile.mod_hash, "abc123");
+    }
+
+    #[test]
+    fn test_client_profile_new_default() {
+        let client = Client::new(None);
+        assert_eq!(client.profile.username, "Guest");
+        assert_eq!(client.profile.colour, 0);
+        assert_eq!(client.profile.mod_hash, "");
+        assert!(client.lobby_channel.is_none());
+        assert!(client.coordinator_channel.is_none());
+        assert!(client.current_lobby.is_none());
+    }
+}
