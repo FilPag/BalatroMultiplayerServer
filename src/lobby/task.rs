@@ -128,11 +128,17 @@ pub fn handle_client_leave(
 }
 
 mod tests {
+    #[allow(unused)]
     use super::*;
+    #[allow(unused)]
     use crate::client::ClientProfile;
-    use crate::messages::{LobbyMessage, ServerToClient};
+    #[allow(unused)]
+    use crate::messages::ServerToClient;
+    #[allow(unused)]
     use crate::test_utils::contains_response_of_type;
+    #[allow(unused)]
     use std::sync::Arc;
+    #[allow(unused)]
     use tokio::sync::mpsc;
 
     #[tokio::test]

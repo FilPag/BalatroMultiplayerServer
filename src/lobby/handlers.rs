@@ -1,7 +1,7 @@
 use super::{broadcaster::LobbyBroadcaster, lobby::Lobby};
 use crate::lobby::lobby::RoundResult;
 use crate::messages::{ClientToServer, ServerToClient};
-use crate::{lobby::handlers, talisman_number::TalismanNumber};
+use crate::talisman_number::TalismanNumber;
 use tracing::{debug, error};
 
 // KISS: Group related handlers

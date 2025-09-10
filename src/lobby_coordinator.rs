@@ -1,8 +1,5 @@
 use crate::lobby::lobby_task;
-use crate::messages::{
-    ClientJoinInfo, ClientToServer, CoordinatorMessage, LobbyExtra, LobbyJoinData, LobbyMessage,
-    ServerToClient,
-};
+use crate::messages::{CoordinatorMessage, LobbyJoinData, LobbyMessage, ServerToClient};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;

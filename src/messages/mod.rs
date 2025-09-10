@@ -48,18 +48,6 @@ impl LobbyMessage {
 }
 
 #[derive(Debug)]
-pub enum LobbyExtra {
-    ClientJoinInfo(ClientJoinInfo),
-    CoordinatorTx(mpsc::UnboundedSender<CoordinatorMessage>),
-}
-
-#[derive(Debug)]
-pub struct ClientJoinInfo {
-    pub client_profile: ClientProfile,
-    pub client_response_tx: mpsc::UnboundedSender<Arc<ServerToClient>>,
-}
-
-#[derive(Debug)]
 pub struct LobbyJoinData {
     pub lobby_code: String,
     pub lobby_tx: tokio::sync::mpsc::UnboundedSender<LobbyMessage>,

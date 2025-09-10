@@ -6,7 +6,6 @@ use tracing::info;
 
 mod client;
 mod game_mode;
-mod insane_int;
 mod lobby;
 mod lobby_coordinator;
 mod messages;

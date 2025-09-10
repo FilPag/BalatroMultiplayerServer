@@ -114,13 +114,6 @@ pub enum ServerToClient {
 }
 
 impl ServerToClient {
-    // Simple, safe JSON conversion - no unwrapping!
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|_| {
-            r#"{"action":"error","message":"Serialization failed"}"#.to_string()
-        })
-    }
-
     // MessagePack conversion
     pub fn to_msgpack(&self) -> Vec<u8> {
         rmp_serde::to_vec_named(self).unwrap_or_else(|_| {

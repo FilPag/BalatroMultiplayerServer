@@ -9,7 +9,7 @@ use crate::{
 use rand::rng;
 use rand::seq::SliceRandom;
 use serde::Serialize;
-use std::{collections::HashMap, result};
+use std::{collections::HashMap};
 use tracing::{debug, error};
 
 #[derive(Debug)]

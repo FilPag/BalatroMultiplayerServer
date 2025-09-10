@@ -269,6 +269,7 @@ impl TalismanNumber {
     }
 
     /// Convert to regular f64 if possible (for smaller numbers)
+    #[allow(unused)]
     pub fn to_f64(&self) -> Option<f64> {
         match self {
             TalismanNumber::Regular(n) => Some(*n),
@@ -285,6 +286,7 @@ impl TalismanNumber {
     }
 
     /// Check if the number is effectively zero
+    #[allow(unused)]
     pub fn is_zero(&self) -> bool {
         match self {
             TalismanNumber::Regular(n) => *n == 0.0,
