@@ -19,6 +19,7 @@ pub enum TalismanNumber {
 pub enum TalismanError {
     InvalidFormat,
     ParseError(String),
+    #[allow(unused)]
     Overflow,
 }
 
@@ -72,21 +73,25 @@ impl<'de> Deserialize<'de> for TalismanNumber {
 
 impl TalismanNumber {
     /// Create a new regular number
+    #[allow(unused)]
     pub fn new_regular(value: f64) -> Self {
         TalismanNumber::Regular(value)
     }
 
     /// Create a new BigNumber
+    #[allow(unused)]
     pub fn new_big(mantissa: f64, exponent: f64) -> Self {
         TalismanNumber::Big { m: mantissa, e: exponent }
     }
 
     /// Create a new OmegaNum
+    #[allow(unused)]
     pub fn new_omega(array: Vec<f64>, sign: i32) -> Self {
         TalismanNumber::Omega { array, sign }
     }
 
     /// Convenient method to parse from any JSON value or string
+    #[allow(unused)]
     pub fn parse<T: AsRef<str>>(input: T) -> Result<Self, TalismanError> {
         Self::from_notation_string(input.as_ref())
     }
