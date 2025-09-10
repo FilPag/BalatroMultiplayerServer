@@ -20,9 +20,14 @@ use crate::messages::CoordinatorMessage;
 /// Entry point: starts the TCP server with simple message passing
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let mut log_level = tracing::Level::INFO;
+    if cfg!(debug_assertions) {
+        log_level = tracing::Level::DEBUG;
+    }
+
     let listener = TcpListener::bind("0.0.0.0:8788").await?;
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(log_level)
         .init();
     info!("Server listening on port 8788");
 

@@ -60,7 +60,7 @@ pub async fn lobby_task(
             }
         }
     }
-    debug!("Lobby {} task ended", lobby_code);
+    info!("Lobby {} task ended", lobby_code);
 }
 
 // --- Pure logic extraction ---
